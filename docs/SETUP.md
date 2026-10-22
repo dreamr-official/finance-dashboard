@@ -8,8 +8,7 @@ secrets ever go in the repo, chat, or git.
 
 1. Create a project at https://supabase.com (free tier is fine for 3 users).
 2. In **SQL Editor**, run `supabase/migrations/0001_init.sql`, then
-   `supabase/migrations/0002_teller.sql`, then `supabase/seed.sql`
-   (edit the emails first).
+   `supabase/seed.sql` (edit the emails first).
 3. In **Authentication → Users → Add user**, create the three accounts
    (admin + two viewers). Then re-run the two `insert` statements in
    `seed.sql` so the allowlist rows attach to the real user IDs.
@@ -21,39 +20,25 @@ secrets ever go in the repo, chat, or git.
 6. Copy **Project URL** and **anon key** into Vercel env vars, plus the
    **service-role key** for the cron job (server-only).
 
-## 2. Teller (bank accounts — recommended)
+## 2. Entering data
 
-Teller's **development** environment is free with real bank data (100
-enrollments — plenty for 3 users). Covers BofA, credit unions, and most
-depository institutions.
+Everything is manual — no bank connections.
 
-1. Sign up at https://teller.io, create an application, copy the
-   `application_id`.
-2. Set `NEXT_PUBLIC_TELLER_APPLICATION_ID` and `TELLER_ENV=development`.
-3. Set `TOKEN_ENCRYPTION_KEY` to a random string
-   (`openssl rand -base64 32`) — it encrypts bank tokens at rest.
-4. In the app: **Accounts → Connect bank (Teller)** → complete Teller
-   Connect → **Sync now** pulls balances + transactions.
-5. Production adds an mTLS client cert (`TELLER_CERT`/`TELLER_KEY`);
-   development doesn't need it.
+- **Accounts page → Add account**: name, institution, type, and the current
+  balance. Do this once per account (checking, savings, Roth, 401k…).
+- **Account detail → Add transaction**: record deposits/withdrawals,
+  transfers between your own accounts, buys, dividends, etc. Use
+  "deposit" only for money coming in from outside — moving money between
+  your own accounts is a "transfer", so contributions stay accurate.
+- **Account detail → CSV**: bulk-import history exported from a bank
+  (`date,name,amount[,type]` columns). Re-importing is safe — duplicates
+  are skipped.
+- **Subscriptions page → Add**: name, cost, frequency, next payment date,
+  and optionally which account it's charged to. Edit or cancel from the
+  row actions.
+- Viewers can see everything but can't change anything.
 
-## 3. Plaid (alternative to Teller — banks)
-
-1. Sign up at https://dashboard.plaid.com — **sandbox** is free.
-2. Get `client_id` + `secret` from Keys. Set `PLAID_CLIENT_ID`,
-   `PLAID_SECRET`, `PLAID_ENV=sandbox`.
-3. The connect flow: `POST /api/integrations/plaid/link-token` → open Plaid
-   Link → `POST /api/integrations/plaid/exchange`. Production access requires
-   Plaid approval; sandbox works immediately.
-
-## 4. SnapTrade (Phase 2 — brokerages)
-
-1. Register at https://snaptrade.com for `clientId` + `consumerKey` (free
-   tier exists). Set `SNAPTRADE_CLIENT_ID`, `SNAPTRADE_CONSUMER_KEY`.
-2. Covers Fidelity/Robinhood-style brokerage connections Plaid doesn't reach.
-3. `src/lib/integrations/snaptrade.ts` has the wiring points marked.
-
-## 5. Vercel
+## 3. Vercel
 
 1. Import the repo (keep it **private**). Framework preset: Next.js.
 2. Add the env vars from `.env.example` (Production scope; also Preview if
@@ -66,6 +51,4 @@ depository institutions.
 
 - All mutating API routes call `requireAdmin()`; read routes require a
   session AND an `authorized_users` row — enforced again by Postgres RLS.
-- Provider tokens are stored encrypted (`connections.encrypted_token`),
-  never returned to the browser.
-- Read-only API access only — the app cannot move money.
+- No third-party financial connections — nothing leaves your database.

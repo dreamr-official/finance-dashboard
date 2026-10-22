@@ -1,5 +1,11 @@
 import { getDataset } from "@/lib/data/provider";
+import { getSessionUser } from "@/lib/auth";
 import { fmtCurrency } from "@/lib/format";
+import {
+  AddTransactionButton,
+  EditAccountButton,
+  DeleteTransactionButton,
+} from "./account-actions";
 import { BalanceChart } from "@/components/balance-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,8 +35,9 @@ export default async function AccountPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { accounts, institutions, snapshots, transactions, holdings } =
-    await getDataset();
+  const [{ accounts, institutions, snapshots, transactions, holdings }, user] =
+    await Promise.all([getDataset(), getSessionUser()]);
+  const isAdmin = user?.role === "admin";
   const account = accounts.find((a) => a.id === id);
   if (!account) notFound();
   const inst = institutions.find((i) => i.id === account.institutionId);
@@ -46,8 +53,18 @@ export default async function AccountPage({
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <p className="text-sm text-muted-foreground">{inst?.name}</p>
-        <h1 className="text-2xl font-semibold tracking-tight">{account.name}</h1>
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">{inst?.name}</p>
+            <h1 className="text-2xl font-semibold tracking-tight">{account.name}</h1>
+          </div>
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <AddTransactionButton account={account} />
+              <EditAccountButton account={account} />
+            </div>
+          )}
+        </div>
         <div className="mt-1 text-3xl font-semibold tabular-nums">
           {fmtCurrency(account.currentBalance)}
         </div>
@@ -119,6 +136,7 @@ export default async function AccountPage({
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
+                {isAdmin && <TableHead className="w-8" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -141,6 +159,11 @@ export default async function AccountPage({
                   >
                     {fmtCurrency(t.amount, { sign: true })}
                   </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <DeleteTransactionButton id={t.id} />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

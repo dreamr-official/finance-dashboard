@@ -20,42 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Upload, RefreshCw } from "lucide-react";
-
-export function SyncButton() {
-  const router = useRouter();
-  const [status, setStatus] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function sync() {
-    setLoading(true);
-    setStatus(null);
-    const res = await fetch("/api/sync", { method: "POST" });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) {
-      setStatus(typeof data.error === "string" ? data.error : "Sync failed");
-      return;
-    }
-    const errs = (data.results ?? []).filter((r: { error?: string }) => r.error);
-    setStatus(
-      errs.length
-        ? `${errs.length} connection(s) failed`
-        : `Synced ${(data.results ?? []).length} connection(s)`,
-    );
-    router.refresh();
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <Button size="sm" variant="outline" onClick={sync} disabled={loading}>
-        <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-        Sync now
-      </Button>
-      {status && <span className="text-xs text-muted-foreground">{status}</span>}
-    </div>
-  );
-}
+import { Plus, Upload } from "lucide-react";
 
 const TYPES = [
   "checking",

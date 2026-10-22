@@ -21,8 +21,8 @@ function walk(seed: number, i: number) {
 export const demoInstitutions: Institution[] = [
   { id: "inst-bofa", name: "Bank of America", provider: "manual" },
   { id: "inst-stanford", name: "Stanford Federal Credit Union", provider: "manual" },
-  { id: "inst-fidelity", name: "Fidelity", provider: "snaptrade" },
-  { id: "inst-robinhood", name: "Robinhood", provider: "snaptrade" },
+  { id: "inst-fidelity", name: "Fidelity", provider: "manual" },
+  { id: "inst-robinhood", name: "Robinhood", provider: "manual" },
   { id: "inst-happen", name: "Happen Bank", provider: "manual" },
   { id: "inst-xmoney", name: "X Money", provider: "manual" },
 ];

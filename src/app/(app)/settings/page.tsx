@@ -1,6 +1,5 @@
 import { getSessionUser } from "@/lib/auth";
-import { isDemoMode, isPlaidConfigured, isSnapTradeConfigured } from "@/lib/env";
-import { listProviders } from "@/lib/integrations/registry";
+import { isDemoMode } from "@/lib/env";
 import { DEFAULT_ROTH_LIMITS } from "@/lib/finance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,9 +7,6 @@ import { Badge } from "@/components/ui/badge";
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
-  const providers = listProviders();
-  void isPlaidConfigured;
-  void isSnapTradeConfigured;
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
@@ -36,19 +32,10 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle>Financial integrations</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {providers.map((p) => (
-            <div key={p.id} className="flex items-center justify-between">
-              <span className="capitalize">{p.id}</span>
-              <Badge variant={p.configured ? "default" : "secondary"}>
-                {p.configured ? "configured" : "not configured"}
-              </Badge>
-            </div>
-          ))}
-          <p className="text-xs text-muted-foreground">
-            See docs/SETUP.md for creating a Plaid/SnapTrade developer account and
-            adding credentials — never paste secrets into the repo or chat.
-          </p>
+        <CardContent className="text-sm text-muted-foreground">
+          All data is entered manually. Bank/brokerage API connections (Teller,
+          Plaid, SnapTrade) are disabled — ask an admin to re-enable them if you
+          ever want automatic syncing.
         </CardContent>
       </Card>
 

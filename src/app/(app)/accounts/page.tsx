@@ -3,8 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { fmtCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AddAccountDialog, ImportCsvDialog, SyncButton } from "./account-tools";
-import { ConnectTellerButton } from "./connect-teller";
+import { AddAccountDialog, ImportCsvDialog } from "./account-tools";
 import Link from "next/link";
 
 
@@ -14,8 +13,6 @@ export default async function AccountsPage() {
     getSessionUser(),
   ]);
   const isAdmin = user?.role === "admin";
-  const tellerAppId = process.env.NEXT_PUBLIC_TELLER_APPLICATION_ID;
-  const tellerEnv = process.env.TELLER_ENV ?? "development";
   const byInst = new Map<string, typeof accounts>();
   for (const a of accounts) {
     const arr = byInst.get(a.institutionId) ?? [];
@@ -27,15 +24,7 @@ export default async function AccountsPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
-        {isAdmin && (
-          <div className="flex items-center gap-2">
-            <AddAccountDialog />
-            <SyncButton />
-            {tellerAppId && (
-              <ConnectTellerButton applicationId={tellerAppId} environment={tellerEnv} />
-            )}
-          </div>
-        )}
+        {isAdmin && <AddAccountDialog />}
       </div>
       {[...byInst.entries()].map(([instId, accts]) => {
         const inst = institutions.find((i) => i.id === instId);

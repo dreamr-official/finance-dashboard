@@ -57,7 +57,7 @@ function Footer({ demoMode, role }: { demoMode: boolean; role: string }) {
     <div className="mt-auto flex flex-col gap-2 px-3 pb-4">
       {demoMode && (
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-          Demo data — connect Supabase &amp; Plaid to go live
+          Demo data — connect Supabase to save your data
         </div>
       )}
       <div className="flex items-center justify-between px-1">
