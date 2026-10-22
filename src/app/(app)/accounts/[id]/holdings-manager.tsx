@@ -281,54 +281,34 @@ export function HoldingRowActions({
   );
 }
 
-/** Manual holdings controls for a manual investment/retirement account. */
+export function AddHoldingButton({ accountId }: { accountId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <Plus className="mr-1 h-4 w-4" /> Add holding
+      </Button>
+      {open && (
+        <HoldingDialog accountId={accountId} open={open} onOpenChange={setOpen} />
+      )}
+    </>
+  );
+}
+
 export function HoldingsManager({
   account,
   holdings,
-  isAdmin,
 }: {
   account: Account;
   holdings: Holding[];
-  isAdmin: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const gap = holdingsBalanceGap(holdings, account.currentBalance);
-
-  if (!isAdmin && !gap) return null;
+  if (!gap) return null;
   return (
-    <div className="space-y-2">
-      {isAdmin && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" /> Add holding
-          </Button>
-          {open && (
-            <HoldingDialog accountId={account.id} open={open} onOpenChange={setOpen} />
-          )}
-        </div>
-      )}
-      {isAdmin && holdings.length > 0 && (
-        <ul className="divide-y rounded-lg border text-sm">
-          {holdings.map((h) => (
-            <li key={h.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
-              <span className="min-w-0 truncate">
-                <span className="font-medium">{h.symbol}</span>
-                <span className="ml-2 tabular-nums text-muted-foreground">
-                  {fmtCurrency(h.value)}
-                </span>
-              </span>
-              <HoldingRowActions accountId={account.id} holding={h} />
-            </li>
-          ))}
-        </ul>
-      )}
-      {gap && (
-        <p className="text-xs text-muted-foreground">
-          Holdings total {fmtCurrency(gap.total)}, which is{" "}
-          {fmtCurrency(Math.abs(gap.gap))} {gap.gap > 0 ? "more" : "less"} than the account
-          balance. The balance isn&apos;t changed by holdings — edit the account to update it.
-        </p>
-      )}
-    </div>
+    <p className="text-xs text-muted-foreground">
+      Holdings total {fmtCurrency(gap.total)}, which is{" "}
+      {fmtCurrency(Math.abs(gap.gap))} {gap.gap > 0 ? "more" : "less"} than the account
+      balance. The balance isn&apos;t changed by holdings — edit the account to update it.
+    </p>
   );
 }
