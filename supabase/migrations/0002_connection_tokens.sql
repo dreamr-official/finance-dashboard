@@ -11,7 +11,7 @@ create or replace function upsert_connection(
   p_token text,
   p_key text
 ) returns uuid
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_id uuid;
 begin
@@ -38,7 +38,7 @@ create or replace function decrypt_connection_token(
   p_connection_id uuid,
   p_key text
 ) returns text
-language sql security definer set search_path = public as $$
+language sql security definer set search_path = public, extensions as $$
   select pgp_sym_decrypt(encrypted_token, p_key)
   from connections where id = p_connection_id;
 $$;
