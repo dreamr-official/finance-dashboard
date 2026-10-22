@@ -119,7 +119,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
               <Input id="category" name="category" placeholder="e.g. Investing" />
             </div>
             {error && <p className="text-sm text-red-500">{error}</p>}
-            <Button disabled={loading}>{loading ? "Adding…" : "Add"}</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Adding…" : "Add"}</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -193,7 +193,7 @@ export function EditAccountButton({ account }: { account: Account }) {
               />
             </div>
             {error && <p className="text-sm text-red-500">{error}</p>}
-            <Button disabled={loading}>{loading ? "Saving…" : "Save"}</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save"}</Button>
           </form>
         </DialogContent>
       </Dialog>

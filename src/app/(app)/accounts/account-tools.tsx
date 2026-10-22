@@ -133,7 +133,7 @@ export function AddAccountDialog() {
               </div>
             </div>
             {error && <p className="text-sm text-red-500">{String(error)}</p>}
-            <Button disabled={loading}>{loading ? "Adding…" : "Add account"}</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Adding…" : "Add account"}</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -205,7 +205,7 @@ export function ImportCsvDialog({ account }: { account: Account }) {
               placeholder={"2026-01-15,ACH Deposit — Fidelity,2000.00,deposit"}
             />
             {result && <p className="text-sm">{result}</p>}
-            <Button disabled={loading}>{loading ? "Importing…" : "Import"}</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Importing…" : "Import"}</Button>
           </form>
         </DialogContent>
       </Dialog>

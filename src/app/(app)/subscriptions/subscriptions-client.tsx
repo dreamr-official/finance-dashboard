@@ -154,7 +154,7 @@ function SubscriptionDialog({
             </Select>
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <Button disabled={loading}>{loading ? "Saving…" : "Save"}</Button>
+          <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save"}</Button>
         </form>
       </DialogContent>
     </Dialog>
