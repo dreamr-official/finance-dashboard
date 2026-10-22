@@ -2,6 +2,7 @@ import { getDataset } from "@/lib/data/provider";
 import { rothContributions, DEFAULT_ROTH_LIMITS } from "@/lib/finance";
 import { fmtCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ContributionsChart } from "@/components/contributions-chart";
 import {
   Table,
   TableBody,
@@ -39,6 +40,32 @@ export default async function InvestmentsPage() {
         .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     }))
     .sort((a, b) => b.amount - a.amount);
+  const contributionsByDate = new Map<string, number>();
+  for (const transaction of transactions) {
+    if (
+      !investAccountIds.has(transaction.accountId) ||
+      (transaction.type !== "deposit" && transaction.type !== "withdrawal")
+    ) {
+      continue;
+    }
+    const amount =
+      transaction.type === "deposit"
+        ? Math.abs(transaction.amount)
+        : -Math.abs(transaction.amount);
+    contributionsByDate.set(
+      transaction.date,
+      (contributionsByDate.get(transaction.date) ?? 0) + amount,
+    );
+  }
+  const contributionHistory = [...contributionsByDate]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .reduce<{ date: string; value: number }[]>((history, [date, amount]) => [
+      ...history,
+      {
+        date,
+        value: (history[history.length - 1]?.value ?? 0) + amount,
+      },
+    ], []);
   const maxContribution = contributionByAccount[0]?.amount ?? 0;
   const stats = investAccounts.map((account) => {
     const accountTransactions = transactions.filter(
@@ -121,6 +148,21 @@ export default async function InvestmentsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Contributions over time</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {contributionHistory.length ? (
+            <ContributionsChart data={contributionHistory} />
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No deposits or withdrawals to chart yet.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

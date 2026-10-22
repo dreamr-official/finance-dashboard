@@ -10,7 +10,8 @@ secrets ever go in the repo, chat, or git.
 2. In **SQL Editor**, run `supabase/migrations/0001_init.sql`,
    `supabase/migrations/0002_connection_tokens.sql`, and
    `supabase/migrations/0003_plaid_sync.sql`, and
-   `supabase/migrations/0004_realtime_push.sql`, then `supabase/seed.sql`
+   `supabase/migrations/0004_realtime_push.sql`, and
+   `supabase/migrations/0005_investments_history.sql`, then `supabase/seed.sql`
    (edit the emails first). Migration 0004 enables Realtime refreshes and
    creates the RLS-protected push subscription table.
 3. In **Authentication → Users → Add user**, create the three accounts
@@ -57,7 +58,12 @@ transactions but does not initiate payments or modify accounts at the bank.
 4. Use **Sync now** on Accounts for an on-demand refresh. The daily
    `/api/cron/daily-snapshot` job syncs Plaid connections before recording
    balance snapshots.
-5. Production access requires Plaid approval. Sandbox can be used for setup
+5. If investment data is not enabled for an existing Item, open
+   **Settings → Plaid connections → Grant investment access** and complete
+   Plaid Link update mode. Then sync again. Investments availability depends
+   on your Plaid plan and institution; unsupported Items continue syncing
+   account balances and Transactions without investment data.
+6. Production access requires Plaid approval. Sandbox can be used for setup
    testing, but never enter real financial credentials in the repository.
 
 ## 4. Notifications

@@ -2,9 +2,11 @@ import { getDataset } from "@/lib/data/provider";
 import { getSessionUser } from "@/lib/auth";
 import { fmtCurrency } from "@/lib/format";
 import {
+  AddPastBalanceButton,
   AddTransactionButton,
   EditAccountButton,
   DeleteTransactionButton,
+  RebuildHistoryButton,
 } from "./account-actions";
 import { BalanceChart } from "@/components/balance-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,6 +64,10 @@ export default async function AccountPage({
           {isAdmin && (
             <div className="flex flex-wrap items-center gap-2">
               <AddTransactionButton account={account} />
+              <AddPastBalanceButton accountId={account.id} />
+              {(account.assetClass === "cash" || account.assetClass === "liability") && (
+                <RebuildHistoryButton accountId={account.id} />
+              )}
               <TransferButton accounts={accounts} initialFromAccountId={account.id} />
               <EditAccountButton account={account} />
             </div>
@@ -76,6 +82,13 @@ export default async function AccountPage({
             : "Never synced"}
           {account.isManual ? " · manual account" : " · balance comes from bank sync"}
         </div>
+        {!account.isManual &&
+          (account.assetClass === "investment" || account.assetClass === "retirement") &&
+          account.connectionNotice && (
+            <p className="mt-2 max-w-2xl text-sm text-amber-700 dark:text-amber-400">
+              {account.connectionNotice}
+            </p>
+          )}
       </div>
 
       {hist.length > 0 && (

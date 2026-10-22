@@ -3,6 +3,8 @@ import { classifyType } from "@/lib/transactions";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildDividendNotification } from "@/lib/push-messages";
 import { sendPushToAll } from "@/lib/push";
+import { isRecentIncomeDate } from "@/lib/investments";
+import { rebuildAccountHistory } from "@/lib/backfill";
 
 export const ASSET_CLASS: Record<string, string> = {
   checking: "cash",
@@ -65,7 +67,33 @@ export async function syncConnection(
     if (tokenError) throw new Error(tokenError.message);
     if (!token) throw new Error("Connection token is unavailable");
 
-    const sync = await provider.sync(token, conn.sync_cursor ?? undefined);
+    const { data: existingAccounts, error: accountLookupError } = await supabase
+      .from("accounts")
+      .select("id")
+      .eq("connection_id", conn.id);
+    if (accountLookupError) throw new Error(accountLookupError.message);
+    const existingAccountIds = (existingAccounts ?? []).map((account) => account.id as string);
+    let hasInvestmentTransactions = false;
+    if (existingAccountIds.length) {
+      const { count, error: investmentRowsError } = await supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .in("account_id", existingAccountIds)
+        .like("provider_txn_id", "inv:%");
+      if (investmentRowsError) throw new Error(investmentRowsError.message);
+      hasInvestmentTransactions = (count ?? 0) > 0;
+    }
+    const investmentStart = new Date();
+    if (hasInvestmentTransactions) {
+      investmentStart.setUTCDate(investmentStart.getUTCDate() - 45);
+    } else {
+      investmentStart.setUTCMonth(investmentStart.getUTCMonth() - 24);
+    }
+    const sync = await provider.sync(
+      token,
+      conn.sync_cursor ?? undefined,
+      investmentStart.toISOString().slice(0, 10),
+    );
     const now = new Date().toISOString();
     const today = now.slice(0, 10);
     const accountIdByProviderId = new Map<string, string>();
@@ -133,10 +161,54 @@ export async function syncConnection(
 
     const { data: linkedAccounts, error: linkedAccountsError } = await supabase
       .from("accounts")
-      .select("id")
+      .select("id,asset_class")
       .eq("connection_id", conn.id);
     if (linkedAccountsError) throw new Error(linkedAccountsError.message);
     const allAccountIds = (linkedAccounts ?? []).map((a) => a.id as string);
+    if (sync.holdingsSynced) {
+      for (const account of linkedAccounts ?? []) {
+        if (account.asset_class !== "investment" && account.asset_class !== "retirement") {
+          continue;
+        }
+        const providerAccountId = [...accountIdByProviderId.entries()].find(
+          ([, accountId]) => accountId === account.id,
+        )?.[0];
+        if (!providerAccountId) continue;
+        const accountHoldings = sync.holdings.filter(
+          (holding) => holding.providerAccountId === providerAccountId,
+        );
+        const { data: existingHoldings, error: existingHoldingsError } = await supabase
+          .from("holdings")
+          .select("id,symbol")
+          .eq("account_id", account.id);
+        if (existingHoldingsError) throw new Error(existingHoldingsError.message);
+        const symbols = new Set(accountHoldings.map((holding) => holding.symbol));
+        const staleIds = (existingHoldings ?? [])
+          .filter((holding) => !symbols.has(holding.symbol))
+          .map((holding) => holding.id);
+        if (staleIds.length) {
+          const { error } = await supabase.from("holdings").delete().in("id", staleIds);
+          if (error) throw new Error(error.message);
+        }
+        if (accountHoldings.length) {
+          const { error } = await supabase.from("holdings").upsert(
+            accountHoldings.map((holding) => ({
+              account_id: account.id,
+              symbol: holding.symbol,
+              name: holding.name,
+              quantity: holding.quantity,
+              price: holding.price,
+              value: holding.value,
+              cost_basis: holding.costBasis ?? null,
+              asset_type: holding.assetType,
+              as_of: now,
+            })),
+            { onConflict: "account_id,symbol" },
+          );
+          if (error) throw new Error(error.message);
+        }
+      }
+    }
     const txnsByAccount = new Map<string, typeof sync.transactions>();
     for (const txn of sync.transactions) {
       const accountId = accountIdByProviderId.get(txn.providerAccountId);
@@ -163,7 +235,11 @@ export async function syncConnection(
         const finalType = existing?.type_overridden
           ? existing.type
           : t.suggestedType ?? classifyType(t.name, t.amount);
-        if (!existing && (finalType === "dividend" || finalType === "interest")) {
+        if (
+          !existing &&
+          (finalType === "dividend" || finalType === "interest") &&
+          isRecentIncomeDate(t.date, new Date(now))
+        ) {
           newIncomeRows.push({
             name: t.name,
             accountName: accountNameByProviderId.get(t.providerAccountId) ?? "your account",
@@ -198,6 +274,12 @@ export async function syncConnection(
       if (error) throw new Error(error.message);
     }
 
+    for (const account of linkedAccounts ?? []) {
+      if (account.asset_class === "cash" || account.asset_class === "liability") {
+        await rebuildAccountHistory(supabase, account.id);
+      }
+    }
+
     const { error: connectionUpdateError } = await supabase
       .from("connections")
       .update({
@@ -205,6 +287,7 @@ export async function syncConnection(
         status: "healthy",
         last_synced_at: now,
         last_error: null,
+        notice: sync.notice ?? null,
       })
       .eq("id", conn.id);
     if (connectionUpdateError) throw new Error(connectionUpdateError.message);

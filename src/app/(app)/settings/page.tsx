@@ -17,13 +17,14 @@ export default async function SettingsPage() {
     status: string;
     lastSyncedAt: string | null;
     lastError: string | null;
+    notice: string | null;
   }[] = [];
   if (user?.role === "admin" && !isDemoMode()) {
     const { createClient } = await import("@/lib/supabase/server");
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("connections")
-      .select("id,institution_id,status,last_synced_at,last_error")
+      .select("id,institution_id,status,last_synced_at,last_error,notice")
       .eq("provider", "plaid");
     if (error) throw new Error(`Unable to load Plaid connections: ${error.message}`);
     const institutionIds = (data ?? []).map((connection) => connection.institution_id);
@@ -43,6 +44,7 @@ export default async function SettingsPage() {
       status: connection.status,
       lastSyncedAt: connection.last_synced_at,
       lastError: connection.last_error,
+      notice: connection.notice,
     }));
   }
   return (
