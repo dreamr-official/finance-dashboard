@@ -102,7 +102,7 @@ export function DonutChart({
         )}
       </div>
       {showLegend && (
-        <div className="min-w-0 flex-1 space-y-2">
+        <div className="min-w-0 flex-1 space-y-2 sm:max-w-sm">
           {data.map((slice, index) => (
             <div key={slice.key} className="flex min-w-0 items-center gap-2 text-xs">
               <span
