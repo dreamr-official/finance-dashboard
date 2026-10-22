@@ -1,12 +1,21 @@
 import { getDataset } from "@/lib/data/provider";
+import { getSessionUser } from "@/lib/auth";
 import { fmtCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AddAccountDialog, ImportCsvDialog, SyncButton } from "./account-tools";
+import { ConnectTellerButton } from "./connect-teller";
 import Link from "next/link";
 
 
 export default async function AccountsPage() {
-  const { accounts, institutions } = await getDataset();
+  const [{ accounts, institutions }, user] = await Promise.all([
+    getDataset(),
+    getSessionUser(),
+  ]);
+  const isAdmin = user?.role === "admin";
+  const tellerAppId = process.env.NEXT_PUBLIC_TELLER_APPLICATION_ID;
+  const tellerEnv = process.env.TELLER_ENV ?? "development";
   const byInst = new Map<string, typeof accounts>();
   for (const a of accounts) {
     const arr = byInst.get(a.institutionId) ?? [];
@@ -16,7 +25,18 @@ export default async function AccountsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            <AddAccountDialog />
+            <SyncButton />
+            {tellerAppId && (
+              <ConnectTellerButton applicationId={tellerAppId} environment={tellerEnv} />
+            )}
+          </div>
+        )}
+      </div>
       {[...byInst.entries()].map(([instId, accts]) => {
         const inst = institutions.find((i) => i.id === instId);
         return (
@@ -45,16 +65,19 @@ export default async function AccountsPage() {
                           {a.isManual ? " · manual" : ""}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium tabular-nums">
-                          {fmtCurrency(a.currentBalance)}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {a.connectionStatus === "healthy"
-                            ? "connected"
-                            : a.connectionStatus === "needs_reauth"
-                              ? "reconnect needed"
-                              : a.connectionStatus}
+                      <div className="flex items-center gap-3">
+                        {isAdmin && a.isManual && <ImportCsvDialog account={a} />}
+                        <div className="text-right">
+                          <div className="text-sm font-medium tabular-nums">
+                            {fmtCurrency(a.currentBalance)}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {a.connectionStatus === "healthy"
+                              ? "connected"
+                              : a.connectionStatus === "needs_reauth"
+                                ? "reconnect needed"
+                                : a.connectionStatus}
+                          </div>
                         </div>
                       </div>
                     </Link>

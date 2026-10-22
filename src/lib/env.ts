@@ -12,6 +12,10 @@ export function isSnapTradeConfigured() {
   return Boolean(process.env.SNAPTRADE_CLIENT_ID && process.env.SNAPTRADE_CONSUMER_KEY);
 }
 
+export function isTellerConfigured() {
+  return Boolean(process.env.NEXT_PUBLIC_TELLER_APPLICATION_ID);
+}
+
 /** True when running on seeded demo data (no Supabase). */
 export function isDemoMode() {
   return process.env.DEMO_MODE === "true" || !isSupabaseConfigured();

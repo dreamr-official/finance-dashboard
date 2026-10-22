@@ -49,7 +49,7 @@ export interface SyncResult {
 }
 
 export interface FinanceProvider {
-  readonly id: "plaid" | "snaptrade" | "manual";
+  readonly id: "plaid" | "snaptrade" | "teller" | "manual";
   readonly configured: boolean;
   /** Begin a connection flow (e.g. Plaid Link token). */
   createLink(userId: string): Promise<LinkResult>;

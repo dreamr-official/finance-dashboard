@@ -1,10 +1,12 @@
 import type { FinanceProvider } from "./types";
 import { plaidProvider } from "./plaid";
 import { snaptradeProvider } from "./snaptrade";
+import { tellerProvider } from "./teller";
 
 const providers: Record<string, FinanceProvider> = {
   plaid: plaidProvider,
   snaptrade: snaptradeProvider,
+  teller: tellerProvider,
 };
 
 export function getProvider(id: string): FinanceProvider | undefined {
