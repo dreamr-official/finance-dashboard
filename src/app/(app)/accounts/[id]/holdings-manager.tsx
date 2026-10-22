@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Account, Holding } from "@/lib/types";
 import { fmtCurrency } from "@/lib/format";
-import { holdingsBalanceGap } from "@/lib/holdings";
+import { holdingsBalanceGap } from "@/lib/manual-holdings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

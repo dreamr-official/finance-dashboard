@@ -5,11 +5,14 @@ import {
   isLiability,
   netWorthSeries,
 } from "@/lib/finance";
-import { fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
+import { assetClassSlices } from "@/lib/holdings";
+import { fmtCompact, fmtCurrency, fmtDate, fmtShare } from "@/lib/format";
 import { NetWorthChart } from "@/components/net-worth-chart";
 import { StatCard } from "@/components/stat-card";
 import { Delta } from "@/components/delta";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DonutChart } from "@/components/charts/donut-chart";
+import { chartColor } from "@/components/charts/colors";
 import Link from "next/link";
 import { getUpcomingSubscriptions } from "@/lib/subscriptions";
 
@@ -38,27 +41,15 @@ export default async function OverviewPage() {
   );
   const series = netWorthSeries(accounts, snapshots);
   const instById = Object.fromEntries(institutions.map((i) => [i.id, i]));
-  const assetAccounts = accounts.filter((account) => !isLiability(account));
+  const assetSlices = assetClassSlices(accounts);
   const groups = [
-    { label: "Cash", accounts: assetAccounts.filter((account) => account.assetClass === "cash") },
-    {
-      label: "Investments",
-      accounts: assetAccounts.filter((account) => account.assetClass === "investment"),
-    },
-    {
-      label: "Retirement",
-      accounts: assetAccounts.filter((account) => account.assetClass === "retirement"),
-    },
-    {
-      label: "Other assets",
-      accounts: assetAccounts.filter(
-        (account) =>
-          !["cash", "investment", "retirement"].includes(account.assetClass),
-      ),
-    },
+    { key: "cash", label: "Cash" },
+    { key: "investment", label: "Investments" },
+    { key: "retirement", label: "Retirement" },
+    { key: "other", label: "Other assets" },
   ].map((group) => ({
     ...group,
-    amount: group.accounts.reduce((sum, account) => sum + account.currentBalance, 0),
+    amount: assetSlices.find((slice) => slice.key === group.key)?.value ?? 0,
   }));
   const maxAssetGroup = Math.max(...groups.map((group) => group.amount), 0);
 
@@ -89,34 +80,57 @@ export default async function OverviewPage() {
           <CardTitle>Where your money sits</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {groups.map((group) => (
-            <div
-              key={group.label}
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center justify-between gap-2 text-sm">
-                  <span>{group.label}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {summary.assets > 0
-                      ? `${((group.amount / summary.assets) * 100).toFixed(1)}%`
-                      : "0%"}
-                  </span>
-                </div>
-                <div className="mt-1 h-2 rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{
-                      width: `${maxAssetGroup > 0 ? (group.amount / maxAssetGroup) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="text-sm font-medium tabular-nums">
-                {fmtCurrency(group.amount, { decimals: 0 })}
-              </div>
+          <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
+            <div className="min-w-0">
+              <DonutChart
+                data={assetSlices}
+                showLegend={false}
+                centerValue={fmtCompact(summary.assets)}
+                centerLabel="Assets"
+              />
             </div>
-          ))}
+            <div className="min-w-0 space-y-4">
+              {groups.map((group) => {
+                const colorIndex = assetSlices.findIndex((slice) => slice.key === group.key);
+                const color = colorIndex >= 0 ? chartColor(colorIndex).fill : undefined;
+                return (
+                  <div
+                    key={group.label}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span
+                            className="size-2.5 shrink-0 rounded-full bg-muted"
+                            style={color ? { backgroundColor: color } : undefined}
+                          />
+                          <span className="truncate">{group.label}</span>
+                        </span>
+                        <span className="shrink-0 text-muted-foreground">
+                          {summary.assets > 0
+                            ? fmtShare((group.amount / summary.assets) * 100)
+                            : "0%"}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-2 rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${maxAssetGroup > 0 ? (group.amount / maxAssetGroup) * 100 : 0}%`,
+                            ...(color ? { backgroundColor: color } : {}),
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="text-sm font-medium tabular-nums">
+                      {fmtCurrency(group.amount, { decimals: 0 })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           <div className="flex items-center justify-between border-t pt-3 text-sm">
             <span className="text-muted-foreground">Liabilities</span>
             <span className="font-medium tabular-nums text-red-600 dark:text-red-400">

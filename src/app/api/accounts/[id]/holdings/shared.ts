@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canManageHoldings } from "@/lib/holdings";
+import { canManageHoldings } from "@/lib/manual-holdings";
 import type { AssetClass } from "@/lib/types";
 
 /** Loads an account and returns an error response unless it accepts manual holdings. */

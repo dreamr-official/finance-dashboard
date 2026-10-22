@@ -1,6 +1,6 @@
 import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
-import { holdingCreateSchema, toHoldingInsert } from "@/lib/holdings";
+import { holdingCreateSchema, toHoldingInsert } from "@/lib/manual-holdings";
 import { holdingWriteError, loadManualInvestmentAccount } from "./shared";
 
 /** Admin-only: add a holding to a manual investment/retirement account.

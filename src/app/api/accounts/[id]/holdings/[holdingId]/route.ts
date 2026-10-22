@@ -1,6 +1,6 @@
 import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
-import { holdingPatchSchema, toHoldingUpdate } from "@/lib/holdings";
+import { holdingPatchSchema, toHoldingUpdate } from "@/lib/manual-holdings";
 import { holdingWriteError, loadManualInvestmentAccount } from "../shared";
 
 type Context = { params: Promise<{ id: string; holdingId: string }> };
