@@ -5,7 +5,8 @@ import { DEFAULT_ROTH_LIMITS } from "@/lib/finance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PlaidConnections } from "./plaid-connections";
-
+import { PushNotifications } from "@/components/push-notifications";
+import { isPushConfigured } from "@/lib/env";
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
@@ -75,6 +76,18 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Notifications</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PushNotifications
+            configured={isPushConfigured() && !isDemoMode()}
+            publicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ""}
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

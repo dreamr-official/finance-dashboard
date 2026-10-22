@@ -5,16 +5,33 @@ import {
   isLiability,
   netWorthSeries,
 } from "@/lib/finance";
-import { fmtCompact, fmtCurrency } from "@/lib/format";
+import { fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
 import { NetWorthChart } from "@/components/net-worth-chart";
 import { StatCard } from "@/components/stat-card";
 import { Delta } from "@/components/delta";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
+import { getUpcomingSubscriptions } from "@/lib/subscriptions";
 
 
 export default async function OverviewPage() {
-  const { accounts, institutions, snapshots } = await getDataset();
+  const { accounts, institutions, snapshots, subscriptions, transactions } = await getDataset();
+  const today = new Date();
+  const upcomingSubscriptions = getUpcomingSubscriptions(subscriptions, today, 14);
+  const cutoff = new Date(today);
+  cutoff.setUTCDate(cutoff.getUTCDate() - 60);
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
+  const todayDate = today.toISOString().slice(0, 10);
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+  const recentIncome = transactions
+    .filter(
+      (transaction) =>
+        (transaction.type === "dividend" || transaction.type === "interest") &&
+        transaction.date >= cutoffDate &&
+        transaction.date <= todayDate,
+    )
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const recentIncomeTotal = recentIncome.reduce((sum, transaction) => sum + transaction.amount, 0);
   const summary = applyNetWorthChange(
     computeNetWorth(accounts),
     netWorthSeries(accounts, snapshots),
@@ -108,6 +125,65 @@ export default async function OverviewPage() {
           </div>
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle>Coming up</CardTitle>
+            <Link href="/subscriptions" className="text-sm text-primary hover:underline">
+              Subscriptions
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {upcomingSubscriptions.length ? (
+              upcomingSubscriptions.map((subscription) => (
+                <div key={subscription.id} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{subscription.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {fmtDate(subscription.nextExpectedDate)} · {subscription.dateVerified ? "Verified" : "Predicted"}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-sm tabular-nums">{fmtCurrency(subscription.amount)}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No active subscriptions due in the next 14 days.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent dividends &amp; interest</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {recentIncome.length ? (
+              <>
+                <div className="flex items-center justify-between border-b pb-2 text-sm">
+                  <span className="text-muted-foreground">Total · last 60 days</span>
+                  <span className="font-semibold tabular-nums">{fmtCurrency(recentIncomeTotal)}</span>
+                </div>
+                {recentIncome.map((transaction) => (
+                  <div key={transaction.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">
+                        {accountById.get(transaction.accountId)?.name ?? "Account"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {fmtDate(transaction.date)} · {transaction.type === "dividend" ? "Dividend" : "Interest"}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-sm tabular-nums">{fmtCurrency(transaction.amount)}</span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No dividends or interest in the last 60 days.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>

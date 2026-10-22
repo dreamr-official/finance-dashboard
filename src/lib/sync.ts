@@ -1,6 +1,8 @@
 import { getProvider } from "@/lib/integrations/registry";
 import { classifyType } from "@/lib/transactions";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { buildDividendNotification } from "@/lib/push-messages";
+import { sendPushToAll } from "@/lib/push";
 
 export const ASSET_CLASS: Record<string, string> = {
   checking: "cash",
@@ -51,6 +53,7 @@ export async function syncConnection(
   supabase: SupabaseClient,
   conn: SyncConnection,
   encKey: string,
+  notify = true,
 ) {
   try {
     const provider = getProvider(conn.provider);
@@ -66,6 +69,13 @@ export async function syncConnection(
     const now = new Date().toISOString();
     const today = now.slice(0, 10);
     const accountIdByProviderId = new Map<string, string>();
+    const accountNameByProviderId = new Map<string, string>();
+    const newIncomeRows: {
+      name: string;
+      accountName: string;
+      amount: number;
+      type: "dividend" | "interest";
+    }[] = [];
 
     for (const pa of sync.accounts) {
       const { data: existing, error: existingError } = await supabase
@@ -113,6 +123,7 @@ export async function syncConnection(
       }
       if (!accountId) throw new Error("Account sync did not return an account id");
       accountIdByProviderId.set(pa.providerAccountId, accountId);
+      accountNameByProviderId.set(pa.providerAccountId, pa.name);
 
       const { error: snapshotError } = await supabase
         .from("balance_snapshots")
@@ -149,15 +160,24 @@ export async function syncConnection(
       );
       const rows = transactions.map((t) => {
         const existing = existingById.get(t.providerTxnId);
+        const finalType = existing?.type_overridden
+          ? existing.type
+          : t.suggestedType ?? classifyType(t.name, t.amount);
+        if (!existing && (finalType === "dividend" || finalType === "interest")) {
+          newIncomeRows.push({
+            name: t.name,
+            accountName: accountNameByProviderId.get(t.providerAccountId) ?? "your account",
+            amount: t.amount,
+            type: finalType,
+          });
+        }
         return {
           account_id: accountId,
           provider_txn_id: t.providerTxnId,
           date: t.date,
           name: t.name,
           amount: t.amount,
-          type: existing?.type_overridden
-            ? existing.type
-            : t.suggestedType ?? classifyType(t.name, t.amount),
+          type: finalType,
           type_overridden: existing?.type_overridden ?? false,
           category: t.category ?? null,
           pending: t.pending ?? false,
@@ -188,6 +208,14 @@ export async function syncConnection(
       })
       .eq("id", conn.id);
     if (connectionUpdateError) throw new Error(connectionUpdateError.message);
+    if (notify) {
+      try {
+        const notification = buildDividendNotification(newIncomeRows);
+        if (notification) await sendPushToAll(notification);
+      } catch {
+        // Push delivery must not fail the sync.
+      }
+    }
     return { connection: conn.id, synced: sync.accounts.length };
   } catch (error) {
     await markSyncFailure(supabase, conn.id, error);
