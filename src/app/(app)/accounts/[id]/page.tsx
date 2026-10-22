@@ -28,7 +28,7 @@ import {
   HoldingRowActions,
   HoldingsManager,
 } from "./holdings-manager";
-import { canManageHoldings } from "@/lib/holdings";
+import { canManageHoldings } from "@/lib/manual-holdings";
 
 
 const TYPE_LABEL: Record<string, string> = {
