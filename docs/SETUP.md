@@ -8,6 +8,7 @@ secrets ever go in the repo, chat, or git.
 
 1. Create a project at https://supabase.com (free tier is fine for 3 users).
 2. In **SQL Editor**, run `supabase/migrations/0001_init.sql`, then
+   `supabase/migrations/0002_connection_tokens.sql`, then
    `supabase/seed.sql` (edit the emails first).
 3. In **Authentication → Users → Add user**, create the three accounts
    (admin + two viewers). Then re-run the two `insert` statements in
@@ -38,7 +39,18 @@ Everything is manual — no bank connections.
   row actions.
 - Viewers can see everything but can't change anything.
 
-## 3. Vercel
+## 3. Plaid (optional — bank account linking)
+
+Manual entry works fully without this. To link real bank accounts instead:
+
+1. Sign up at https://dashboard.plaid.com — **sandbox** is free.
+2. Get `client_id` + `secret` from Keys. Set `PLAID_CLIENT_ID`,
+   `PLAID_SECRET`, `PLAID_ENV=sandbox`.
+3. The connect flow: `POST /api/integrations/plaid/link-token` → open Plaid
+   Link → `POST /api/integrations/plaid/exchange`. Production access requires
+   Plaid approval; sandbox works immediately.
+
+## 4. Vercel
 
 1. Import the repo (keep it **private**). Framework preset: Next.js.
 2. Add the env vars from `.env.example` (Production scope; also Preview if

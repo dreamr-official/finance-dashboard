@@ -17,7 +17,7 @@ export type AssetClass = "cash" | "investment" | "retirement" | "liability" | "o
 export interface Institution {
   id: string;
   name: string;
-  provider: "manual";
+  provider: "plaid" | "manual";
   logoUrl?: string;
 }
 
