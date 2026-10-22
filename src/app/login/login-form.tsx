@@ -93,7 +93,7 @@ export function LoginForm() {
           />
         </div>
         {error && <p className="text-sm text-red-500">{error}</p>}
-        <Button disabled={loading}>Verify</Button>
+        <Button type="submit" disabled={loading}>Verify</Button>
       </form>
     );
   }
@@ -109,7 +109,7 @@ export function LoginForm() {
         <Input id="password" name="password" type="password" autoComplete="current-password" required />
       </div>
       {error && <p className="text-sm text-red-500">{error}</p>}
-      <Button disabled={loading}>{loading ? "Signing in…" : "Sign in"}</Button>
+      <Button type="submit" disabled={loading}>{loading ? "Signing in…" : "Sign in"}</Button>
       <p className="text-xs text-muted-foreground">
         No public signup. Access is by invitation only.
       </p>
