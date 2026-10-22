@@ -9,8 +9,10 @@ secrets ever go in the repo, chat, or git.
 1. Create a project at https://supabase.com (free tier is fine for 3 users).
 2. In **SQL Editor**, run `supabase/migrations/0001_init.sql`,
    `supabase/migrations/0002_connection_tokens.sql`, and
-   `supabase/migrations/0003_plaid_sync.sql`, then `supabase/seed.sql` (edit
-   the emails first).
+   `supabase/migrations/0003_plaid_sync.sql`, and
+   `supabase/migrations/0004_realtime_push.sql`, then `supabase/seed.sql`
+   (edit the emails first). Migration 0004 enables Realtime refreshes and
+   creates the RLS-protected push subscription table.
 3. In **Authentication → Users → Add user**, create the three accounts
    (admin + two viewers). Then re-run the two `insert` statements in
    `seed.sql` so the allowlist rows attach to the real user IDs.
@@ -58,7 +60,17 @@ transactions but does not initiate payments or modify accounts at the bank.
 5. Production access requires Plaid approval. Sandbox can be used for setup
    testing, but never enter real financial credentials in the repository.
 
-## 4. Vercel
+## 4. Notifications
+
+Web Push and the PWA install experience use free browser and VAPID support.
+Generate keys with `npx web-push generate-vapid-keys`, then set
+`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT`
+(a `mailto:` address) in Vercel and redeploy. Never commit VAPID keys.
+After signing in, open **Settings → Notifications** to enable each device and
+send a test. On iPhone, add Finance to the Home Screen first; web push requires
+iOS 16.4 or later.
+
+## 5. Vercel
 
 1. Import the repo (keep it **private**). Framework preset: Next.js.
 2. Add the env vars from `.env.example` (Production scope; also Preview if

@@ -9,7 +9,7 @@ const patchSchema = z.object({
   next_expected_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   account_id: z.string().uuid().nullable().optional(),
   status: z.enum(["active", "canceled", "uncertain"]).optional(),
-  remind_days_before: z.number().int().min(0).max(90).nullable().optional(),
+  remind_days_before: z.number().int().min(0).max(14).nullable().optional(),
 });
 
 async function handler(

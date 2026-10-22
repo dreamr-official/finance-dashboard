@@ -93,6 +93,7 @@ export async function POST(req: Request) {
           sync_cursor: null,
         },
         encKey,
+        false,
       );
       synced = true;
     } catch (error) {

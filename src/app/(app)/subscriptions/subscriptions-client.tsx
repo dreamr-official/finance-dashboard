@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Account, Subscription } from "@/lib/types";
 import { fmtCurrency, fmtDate } from "@/lib/format";
+import { getSubscriptionNextPaymentDate, getUpcomingSubscriptions } from "@/lib/subscriptions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,10 @@ function SubscriptionDialog({
       frequency,
       next_expected_date: fd.get("next_expected_date"),
       account_id: accountId === "none" ? null : accountId,
+      remind_days_before:
+        String(fd.get("remind_days_before") ?? "").trim() === ""
+          ? 2
+          : Number(fd.get("remind_days_before")),
     };
     const res = sub
       ? await fetch(`/api/subscriptions/${sub.id}`, {
@@ -143,6 +148,20 @@ function SubscriptionDialog({
             />
           </div>
           <div>
+            <Label htmlFor="remind_days_before">Remind me N days before</Label>
+            <Input
+              id="remind_days_before"
+              name="remind_days_before"
+              type="number"
+              min={0}
+              max={14}
+              step={1}
+              inputMode="numeric"
+              defaultValue={sub?.remindDaysBefore ?? 2}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">Leave blank for the default of 2 days.</p>
+          </div>
+          <div>
             <Label>Charged to (optional)</Label>
             <Select
               value={accountId}
@@ -173,10 +192,6 @@ function SubscriptionDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function daysUntil(date: string) {
-  return Math.ceil((new Date(date).getTime() - Date.now()) / 86400000);
 }
 
 export function SubscriptionsClient({
@@ -214,21 +229,17 @@ export function SubscriptionsClient({
       [...subscriptions].sort((a, b) => {
         if (sort === "name") return a.name.localeCompare(b.name);
         if (sort === "cost") return b.amount - a.amount;
-        return a.nextExpectedDate.localeCompare(b.nextExpectedDate);
+        return getSubscriptionNextPaymentDate(a).localeCompare(getSubscriptionNextPaymentDate(b));
       }),
     [subscriptions, sort],
   );
 
-  const upcoming30 = subscriptions.filter(
-    (s) =>
-      s.status === "active" &&
-      daysUntil(s.nextExpectedDate) >= 0 &&
-      daysUntil(s.nextExpectedDate) <= 30,
-  );
-  const upcoming7 = upcoming30.filter((s) => daysUntil(s.nextExpectedDate) <= 7);
+  const today = new Date();
+  const upcoming30 = getUpcomingSubscriptions(subscriptions, today, 30);
+  const upcoming7 = getUpcomingSubscriptions(subscriptions, today, 7);
   const markedDates = subscriptions
     .filter((s) => s.status === "active")
-    .map((s) => new Date(s.nextExpectedDate + "T12:00:00"));
+    .map((s) => new Date(getSubscriptionNextPaymentDate(s) + "T12:00:00"));
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -284,7 +295,7 @@ export function SubscriptionsClient({
               <div className="grid grid-cols-2 gap-3 border-t pt-3">
                 <div>
                   <div className="text-xs text-muted-foreground">Next payment</div>
-                  <div className="text-sm">{fmtDate(s.nextExpectedDate)}</div>
+                  <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s))}</div>
                   <div className="text-xs text-muted-foreground">
                     {s.dateVerified ? "verified" : "predicted"}
                   </div>
@@ -346,7 +357,7 @@ export function SubscriptionsClient({
                       {fmtCurrency(s.amount)}
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm">{fmtDate(s.nextExpectedDate)}</div>
+                      <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s))}</div>
                       <div className="text-xs text-muted-foreground">
                         {s.dateVerified ? "verified" : "predicted"}
                       </div>
