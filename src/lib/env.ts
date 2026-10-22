@@ -4,6 +4,10 @@ export function isSupabaseConfigured() {
   );
 }
 
+export function isPlaidConfigured() {
+  return Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+}
+
 /** True when running on seeded demo data (no Supabase). */
 export function isDemoMode() {
   return process.env.DEMO_MODE === "true" || !isSupabaseConfigured();
