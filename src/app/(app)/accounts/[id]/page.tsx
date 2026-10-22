@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/table";
 import { notFound } from "next/navigation";
 import { TransferButton } from "../transfer-dialog";
+import { HoldingsManager } from "./holdings-manager";
+import { canManageHoldings } from "@/lib/holdings";
 
 
 const TYPE_LABEL: Record<string, string> = {
@@ -89,6 +91,11 @@ export default async function AccountPage({
               {account.connectionNotice}
             </p>
           )}
+        {canManageHoldings(account) && (
+          <div className="mt-3">
+            <HoldingsManager account={account} holdings={acctHoldings} isAdmin={isAdmin} />
+          </div>
+        )}
       </div>
 
       {hist.length > 0 && (
