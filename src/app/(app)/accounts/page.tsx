@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AddAccountDialog, ImportCsvDialog } from "./account-tools";
 import Link from "next/link";
+import { isDemoMode, isPlaidConfigured } from "@/lib/env";
+import { ConnectBankButton, SyncNowButton } from "./plaid-connect";
+import { TransferButton } from "./transfer-dialog";
 
 
 export default async function AccountsPage() {
@@ -22,18 +25,29 @@ export default async function AccountsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
-        {isAdmin && <AddAccountDialog />}
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2">
+            <TransferButton accounts={accounts} />
+            <AddAccountDialog />
+            {isPlaidConfigured() && !isDemoMode() && (
+              <>
+                <ConnectBankButton />
+                <SyncNowButton />
+              </>
+            )}
+          </div>
+        )}
       </div>
       {[...byInst.entries()].map(([instId, accts]) => {
         const inst = institutions.find((i) => i.id === instId);
         return (
           <Card key={instId}>
             <CardHeader>
-              <CardTitle className="flex items-center justify-between text-base">
-                {inst?.name ?? "Manual"}
-                <Badge variant="outline" className="capitalize">
+              <CardTitle className="flex min-w-0 items-center justify-between gap-2 text-base">
+                <span className="truncate">{inst?.name ?? "Manual"}</span>
+                <Badge variant="outline" className="shrink-0 capitalize">
                   {inst?.provider}
                 </Badge>
               </CardTitle>
@@ -46,8 +60,8 @@ export default async function AccountsPage() {
                       href={`/accounts/${a.id}`}
                       className="flex items-center justify-between px-6 py-3 hover:bg-accent/50"
                     >
-                      <div>
-                        <div className="text-sm font-medium">{a.name}</div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{a.name}</div>
                         <div className="text-xs text-muted-foreground capitalize">
                           {a.type.replace("_", " ")}
                           {a.mask ? ` ····${a.mask}` : ""}

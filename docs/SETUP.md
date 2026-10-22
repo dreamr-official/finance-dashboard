@@ -7,9 +7,10 @@ secrets ever go in the repo, chat, or git.
 ## 1. Supabase
 
 1. Create a project at https://supabase.com (free tier is fine for 3 users).
-2. In **SQL Editor**, run `supabase/migrations/0001_init.sql`, then
-   `supabase/migrations/0002_connection_tokens.sql`, then
-   `supabase/seed.sql` (edit the emails first).
+2. In **SQL Editor**, run `supabase/migrations/0001_init.sql`,
+   `supabase/migrations/0002_connection_tokens.sql`, and
+   `supabase/migrations/0003_plaid_sync.sql`, then `supabase/seed.sql` (edit
+   the emails first).
 3. In **Authentication → Users → Add user**, create the three accounts
    (admin + two viewers). Then re-run the two `insert` statements in
    `seed.sql` so the allowlist rows attach to the real user IDs.
@@ -23,7 +24,7 @@ secrets ever go in the repo, chat, or git.
 
 ## 2. Entering data
 
-Everything is manual — no bank connections.
+Manual entry is the primary workflow; Plaid linking is optional and read-only.
 
 - **Accounts page → Add account**: name, institution, type, and the current
   balance. Do this once per account (checking, savings, Roth, 401k…).
@@ -41,14 +42,21 @@ Everything is manual — no bank connections.
 
 ## 3. Plaid (optional — bank account linking)
 
-Manual entry works fully without this. To link real bank accounts instead:
+Manual entry works fully without this. Plaid syncs account balances and
+transactions but does not initiate payments or modify accounts at the bank.
 
-1. Sign up at https://dashboard.plaid.com — **sandbox** is free.
-2. Get `client_id` + `secret` from Keys. Set `PLAID_CLIENT_ID`,
-   `PLAID_SECRET`, `PLAID_ENV=sandbox`.
-3. The connect flow: `POST /api/integrations/plaid/link-token` → open Plaid
-   Link → `POST /api/integrations/plaid/exchange`. Production access requires
-   Plaid approval; sandbox works immediately.
+1. Sign up at https://dashboard.plaid.com. Get `client_id` and `secret` from
+   Keys. Add `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`, and a
+   `TOKEN_ENCRYPTION_KEY` to Vercel's server-side environment variables.
+2. Redeploy after setting the variables.
+3. As an admin, open **Accounts → Connect bank** and finish Plaid Link. The
+   app exchanges and encrypts the access token, then performs an initial sync.
+   The token is not returned to the browser.
+4. Use **Sync now** on Accounts for an on-demand refresh. The daily
+   `/api/cron/daily-snapshot` job syncs Plaid connections before recording
+   balance snapshots.
+5. Production access requires Plaid approval. Sandbox can be used for setup
+   testing, but never enter real financial credentials in the repository.
 
 ## 4. Vercel
 
@@ -63,4 +71,5 @@ Manual entry works fully without this. To link real bank accounts instead:
 
 - All mutating API routes call `requireAdmin()`; read routes require a
   session AND an `authorized_users` row — enforced again by Postgres RLS.
-- No third-party financial connections — nothing leaves your database.
+- Plaid is optional; access tokens are encrypted server-side and the integration
+  only reads account and transaction data. No payments are initiated.

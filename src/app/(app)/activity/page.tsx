@@ -1,0 +1,262 @@
+import Link from "next/link";
+import { getDataset } from "@/lib/data/provider";
+import { summarizeActivity } from "@/lib/activity";
+import { fmtCurrency } from "@/lib/format";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+const TYPE_OPTIONS = [
+  "deposit",
+  "withdrawal",
+  "transfer_in",
+  "transfer_out",
+  "buy",
+  "sell",
+  "dividend",
+  "interest",
+  "fee",
+  "expense",
+  "income",
+  "other",
+];
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function ActivityPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const [{ accounts, transactions }, params] = await Promise.all([
+    getDataset(),
+    searchParams,
+  ]);
+  const accountId = typeof params.account === "string" ? params.account : "";
+  const type = typeof params.type === "string" ? params.type : "";
+  const month = typeof params.month === "string" ? params.month : "";
+  const query = typeof params.q === "string" ? params.q.trim().toLowerCase() : "";
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+  const filtered = transactions
+    .filter((transaction) => {
+      if (accountId && transaction.accountId !== accountId) return false;
+      if (type && transaction.type !== type) return false;
+      if (month && !transaction.date.startsWith(month)) return false;
+      if (
+        query &&
+        !transaction.name.toLowerCase().includes(query) &&
+        !(transaction.category ?? "").toLowerCase().includes(query)
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const summary = summarizeActivity(filtered, accounts);
+  const visible = filtered.slice(0, 500);
+  const categories = new Map<string, number>();
+  for (const transaction of filtered) {
+    if (
+      (transaction.type === "expense" || transaction.type === "fee") &&
+      transaction.amount < 0
+    ) {
+      const category = transaction.category?.trim() || "Uncategorized";
+      categories.set(
+        category,
+        (categories.get(category) ?? 0) + Math.abs(transaction.amount),
+      );
+    }
+  }
+  const whereItWent = [...categories.entries()].sort((a, b) => b[1] - a[1]);
+  const maxCategoryAmount = whereItWent[0]?.[1] ?? 0;
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          All account transactions, including transfers between your own accounts.
+        </p>
+      </div>
+
+      <form
+        method="get"
+        className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5"
+      >
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          Account
+          <select
+            name="account"
+            defaultValue={accountId}
+            className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
+          >
+            <option value="">All accounts</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          Type
+          <select
+            name="type"
+            defaultValue={type}
+            className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground capitalize md:text-sm"
+          >
+            <option value="">All types</option>
+            {TYPE_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option.replace("_", " ")}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          Month
+          <input
+            name="month"
+            type="month"
+            defaultValue={month}
+            className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          Search
+          <input
+            name="q"
+            type="search"
+            defaultValue={query}
+            placeholder="Name or category"
+            className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
+          />
+        </label>
+        <div className="flex items-end gap-3">
+          <button
+            type="submit"
+            className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"
+          >
+            Apply filters
+          </button>
+          <Link href="/activity" className="pb-2 text-sm text-muted-foreground underline">
+            Clear
+          </Link>
+        </div>
+      </form>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+        <SummaryCard title="Money in" amount={summary.moneyIn} />
+        <SummaryCard title="Money out" amount={summary.moneyOut} />
+        <div className="col-span-2 sm:col-span-1">
+          <SummaryCard title="Investment contributions" amount={summary.contributions} />
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Where it went</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {whereItWent.length ? (
+            whereItWent.map(([category, amount]) => (
+              <div key={category} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm">{category}</div>
+                  <div className="mt-1 h-2 rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${(amount / maxCategoryAmount) * 100}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="text-sm tabular-nums">{fmtCurrency(amount)}</div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">No expenses in this filtered set.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {filtered.length > 500 && (
+        <p className="text-sm text-muted-foreground">
+          Showing the newest 500 of {filtered.length} matching transactions.
+        </p>
+      )}
+      <div className="space-y-2 md:hidden">
+        {visible.map((transaction) => (
+          <article key={transaction.id} className="rounded-lg border bg-card p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{transaction.name}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {accountById.get(transaction.accountId)?.name ?? "Account"} ·{" "}
+                  {transaction.date}
+                </div>
+              </div>
+              <div className="shrink-0 text-sm font-medium tabular-nums">
+                {fmtCurrency(transaction.amount, { sign: true })}
+              </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <Badge variant={transaction.type === "deposit" ? "default" : "outline"}>
+                {transaction.type.replace("_", " ")}
+              </Badge>
+              <span className="truncate text-xs text-muted-foreground">
+                {transaction.category || "Uncategorized"}
+              </span>
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto rounded-lg border md:block">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Date</th>
+              <th className="px-3 py-2 text-left font-medium">Account</th>
+              <th className="px-3 py-2 text-left font-medium">Name</th>
+              <th className="px-3 py-2 text-left font-medium">Type</th>
+              <th className="px-3 py-2 text-left font-medium">Category</th>
+              <th className="px-3 py-2 text-right font-medium">Amount</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {visible.map((transaction) => (
+              <tr key={transaction.id}>
+                <td className="whitespace-nowrap px-3 py-2">{transaction.date}</td>
+                <td className="max-w-48 truncate px-3 py-2">
+                  {accountById.get(transaction.accountId)?.name ?? "Account"}
+                </td>
+                <td className="max-w-64 truncate px-3 py-2">{transaction.name}</td>
+                <td className="whitespace-nowrap px-3 py-2 capitalize">
+                  {transaction.type.replace("_", " ")}
+                </td>
+                <td className="px-3 py-2">{transaction.category || "Uncategorized"}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                  {fmtCurrency(transaction.amount, { sign: true })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!visible.length && (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          No transactions match these filters.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SummaryCard({ title, amount }: { title: string; amount: number }) {
+  return (
+    <Card className="py-0">
+      <CardContent className="p-4">
+        <div className="text-sm text-muted-foreground">{title}</div>
+        <div className="mt-1 text-xl font-semibold tabular-nums">{fmtCurrency(amount)}</div>
+      </CardContent>
+    </Card>
+  );
+}

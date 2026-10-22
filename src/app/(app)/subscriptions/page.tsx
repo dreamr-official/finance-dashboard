@@ -17,7 +17,7 @@ export default async function SubscriptionsPage() {
   );
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Subscriptions</h1>
         <div className="text-sm text-muted-foreground">
           ${monthly.toFixed(2)}/mo · ${annual.toFixed(0)}/yr

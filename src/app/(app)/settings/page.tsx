@@ -4,11 +4,46 @@ import { listProviders } from "@/lib/integrations/registry";
 import { DEFAULT_ROTH_LIMITS } from "@/lib/finance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PlaidConnections } from "./plaid-connections";
 
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
   const providers = listProviders();
+  let plaidConnections: {
+    id: string;
+    institutionName: string;
+    status: string;
+    lastSyncedAt: string | null;
+    lastError: string | null;
+  }[] = [];
+  if (user?.role === "admin" && !isDemoMode()) {
+    const { createClient } = await import("@/lib/supabase/server");
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("connections")
+      .select("id,institution_id,status,last_synced_at,last_error")
+      .eq("provider", "plaid");
+    if (error) throw new Error(`Unable to load Plaid connections: ${error.message}`);
+    const institutionIds = (data ?? []).map((connection) => connection.institution_id);
+    const { data: institutions, error: institutionError } = institutionIds.length
+      ? await supabase
+          .from("institutions")
+          .select("id,name")
+          .in("id", institutionIds)
+      : { data: [], error: null };
+    if (institutionError) {
+      throw new Error(`Unable to load Plaid institutions: ${institutionError.message}`);
+    }
+    const nameById = new Map((institutions ?? []).map((institution) => [institution.id, institution.name]));
+    plaidConnections = (data ?? []).map((connection) => ({
+      id: connection.id,
+      institutionName: nameById.get(connection.institution_id) ?? "Plaid institution",
+      status: connection.status,
+      lastSyncedAt: connection.last_synced_at,
+      lastError: connection.last_error,
+    }));
+  }
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
@@ -30,6 +65,17 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
+      {user?.role === "admin" && !isDemoMode() && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Plaid connections</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PlaidConnections connections={plaidConnections} />
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Financial integrations</CardTitle>
@@ -44,8 +90,10 @@ export default async function SettingsPage() {
             </div>
           ))}
           <p className="text-xs text-muted-foreground">
-            Manual entry works either way — Plaid is optional. See docs/SETUP.md;
-            never paste secrets into the repo or chat.
+            Manual entry works either way — Plaid is optional. To connect a bank,
+            set PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV, and TOKEN_ENCRYPTION_KEY
+            in Vercel, redeploy, then use Accounts → Connect bank. Never paste
+            secrets into the repo or chat.
           </p>
         </CardContent>
       </Card>

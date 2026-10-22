@@ -37,11 +37,14 @@ export async function POST(
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
-  const { data: acct } = await supabase
+  const { data: acct, error: accountError } = await supabase
     .from("accounts")
-    .select("id, current_balance")
+    .select("id,current_balance,is_manual")
     .eq("id", id)
     .single();
+  if (accountError && accountError.code !== "PGRST116") {
+    return Response.json({ error: accountError.message }, { status: 500 });
+  }
   if (!acct) return Response.json({ error: "Account not found" }, { status: 404 });
 
   const { data: txn, error } = await supabase
@@ -51,12 +54,23 @@ export async function POST(
     .single();
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  const balance = Number(acct.current_balance) + body.data.amount;
-  const today = new Date().toISOString().slice(0, 10);
-  await supabase.from("accounts").update({ current_balance: balance }).eq("id", id);
-  await supabase
-    .from("balance_snapshots")
-    .upsert({ account_id: id, date: today, balance });
+  if (acct.is_manual) {
+    const balance = Number(acct.current_balance) + body.data.amount;
+    const today = new Date().toISOString().slice(0, 10);
+    const { error: balanceError } = await supabase
+      .from("accounts")
+      .update({ current_balance: balance })
+      .eq("id", id);
+    if (balanceError) {
+      return Response.json({ error: balanceError.message }, { status: 500 });
+    }
+    const { error: snapshotError } = await supabase
+      .from("balance_snapshots")
+      .upsert({ account_id: id, date: today, balance });
+    if (snapshotError) {
+      return Response.json({ error: snapshotError.message }, { status: 500 });
+    }
+  }
 
   return Response.json(txn, { status: 201 });
 }

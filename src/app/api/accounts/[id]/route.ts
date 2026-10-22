@@ -34,15 +34,35 @@ export async function PATCH(
   }
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
-  const { error } = await supabase.from("accounts").update(body.data).eq("id", id);
+  const { data: account, error: accountError } = await supabase
+    .from("accounts")
+    .select("is_manual,type")
+    .eq("id", id)
+    .maybeSingle();
+  if (accountError) return Response.json({ error: accountError.message }, { status: 500 });
+  if (!account) return Response.json({ error: "Account not found" }, { status: 404 });
+  if (!account.is_manual && body.data.current_balance !== undefined) {
+    return Response.json({ error: "Bank-synced balances cannot be edited" }, { status: 400 });
+  }
+  const update = { ...body.data };
+  if (
+    update.current_balance !== undefined &&
+    (account.type === "credit_card" || account.type === "loan")
+  ) {
+    update.current_balance = -Math.abs(update.current_balance);
+  }
+  const { error } = await supabase.from("accounts").update(update).eq("id", id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
-  if (body.data.current_balance !== undefined) {
+  if (update.current_balance !== undefined) {
     const today = new Date().toISOString().slice(0, 10);
-    await supabase.from("balance_snapshots").upsert({
+    const { error: snapshotError } = await supabase.from("balance_snapshots").upsert({
       account_id: id,
       date: today,
-      balance: body.data.current_balance,
+      balance: update.current_balance,
     });
+    if (snapshotError) {
+      return Response.json({ error: snapshotError.message }, { status: 500 });
+    }
   }
   return Response.json({ ok: true });
 }

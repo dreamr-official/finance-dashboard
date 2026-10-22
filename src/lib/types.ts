@@ -106,16 +106,3 @@ export interface NetWorthSummary {
   investments: number;
   change: { day: number; week: number; month: number; year: number };
 }
-
-export interface ContributionStats {
-  accountId: string;
-  currentValue: number;
-  totalDeposits: number;
-  totalWithdrawals: number;
-  netContributions: number;
-  simpleGain: number; // currentValue - netContributions
-  /** null when there is insufficient data for a meaningful return */
-  returnPct: number | null;
-  contributionsByMonth: { month: string; amount: number }[];
-  series: { date: string; value: number; contributions: number }[];
-}

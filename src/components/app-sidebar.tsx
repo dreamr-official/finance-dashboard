@@ -7,6 +7,7 @@ import {
   TrendingUp,
   Repeat,
   Wallet,
+  ArrowLeftRight,
   Settings,
   Menu,
   Sun,
@@ -22,8 +23,9 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 const NAV = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/investments", label: "Investments", icon: TrendingUp },
-  { href: "/subscriptions", label: "Subscriptions", icon: Repeat },
   { href: "/accounts", label: "Accounts", icon: Wallet },
+  { href: "/activity", label: "Activity", icon: ArrowLeftRight },
+  { href: "/subscriptions", label: "Subscriptions", icon: Repeat },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -56,7 +58,7 @@ function Footer({ demoMode, role }: { demoMode: boolean; role: string }) {
   return (
     <div className="mt-auto flex flex-col gap-2 px-3 pb-4">
       {demoMode && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+        <div className="w-full min-w-0 break-words rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
           Demo data — connect Supabase to save your data
         </div>
       )}
@@ -74,7 +76,13 @@ function Footer({ demoMode, role }: { demoMode: boolean; role: string }) {
             <Moon className="hidden h-4 w-4 dark:block" />
           </Button>
           <form action="/api/auth/signout" method="post">
-            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Sign out">
+            <Button
+              type="submit"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              aria-label="Sign out"
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           </form>
@@ -106,7 +114,7 @@ export function AppSidebar({ demoMode, role }: { demoMode: boolean; role: string
               </Button>
             }
           />
-          <SheetContent side="left" className="flex w-64 flex-col p-0 pt-4">
+          <SheetContent side="left" className="flex w-64 min-w-0 flex-col bg-card p-0 pt-4">
             <div className="px-6 pb-2 text-lg font-semibold">Finance</div>
             <NavLinks onNavigate={() => setOpen(false)} />
             <Footer demoMode={demoMode} role={role} />

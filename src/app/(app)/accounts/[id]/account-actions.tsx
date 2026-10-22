@@ -40,6 +40,7 @@ const TXN_TYPES = [
 export function AddTransactionButton({ account }: { account: Account }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [transactionType, setTransactionType] = useState("deposit");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -55,7 +56,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
         date: fd.get("date"),
         name: fd.get("name"),
         amount: Number(fd.get("amount")),
-        type: fd.get("type"),
+        type: transactionType,
         category: fd.get("category") || undefined,
       }),
     });
@@ -71,11 +72,11 @@ export function AddTransactionButton({ account }: { account: Account }) {
 
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" onClick={() => setOpen(true)}>
         <Plus className="mr-1 h-4 w-4" /> Add transaction
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add transaction — {account.name}</DialogTitle>
             <DialogDescription>
@@ -92,8 +93,11 @@ export function AddTransactionButton({ account }: { account: Account }) {
               </div>
               <div>
                 <Label>Type</Label>
-                <Select name="type" defaultValue="deposit">
-                  <SelectTrigger>
+                <Select
+                  value={transactionType}
+                  onValueChange={(value) => value && setTransactionType(value)}
+                >
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -119,7 +123,9 @@ export function AddTransactionButton({ account }: { account: Account }) {
               <Input id="category" name="category" placeholder="e.g. Investing" />
             </div>
             {error && <p className="text-sm text-red-500">{error}</p>}
-            <Button type="submit" disabled={loading}>{loading ? "Adding…" : "Add"}</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Adding…" : "Add"}
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -143,7 +149,9 @@ export function EditAccountButton({ account }: { account: Account }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: fd.get("name"),
-        current_balance: Number(fd.get("current_balance")),
+        ...(account.isManual
+          ? { current_balance: Number(fd.get("current_balance")) }
+          : {}),
       }),
     });
     setLoading(false);
@@ -164,15 +172,15 @@ export function EditAccountButton({ account }: { account: Account }) {
   return (
     <>
       <div className="flex gap-1">
-        <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
           <Pencil className="mr-1 h-4 w-4" /> Edit
         </Button>
-        <Button size="sm" variant="outline" onClick={onDelete}>
+        <Button type="button" size="sm" variant="outline" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit {account.name}</DialogTitle>
           </DialogHeader>
@@ -181,19 +189,29 @@ export function EditAccountButton({ account }: { account: Account }) {
               <Label htmlFor="name">Name</Label>
               <Input id="name" name="name" defaultValue={account.name} required />
             </div>
-            <div>
-              <Label htmlFor="current_balance">Current balance</Label>
-              <Input
-                id="current_balance"
-                name="current_balance"
-                type="number"
-                step="0.01"
-                defaultValue={account.currentBalance}
-                required
-              />
-            </div>
+            {account.isManual && (
+              <div>
+                <Label htmlFor="current_balance">
+                  {account.assetClass === "liability" ? "Amount owed" : "Current balance"}
+                </Label>
+                <Input
+                  id="current_balance"
+                  name="current_balance"
+                  type="number"
+                  step="0.01"
+                  defaultValue={
+                    account.assetClass === "liability"
+                      ? Math.abs(account.currentBalance)
+                      : account.currentBalance
+                  }
+                  required
+                />
+              </div>
+            )}
             {error && <p className="text-sm text-red-500">{error}</p>}
-            <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save"}</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving…" : "Save"}
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -201,7 +219,13 @@ export function EditAccountButton({ account }: { account: Account }) {
   );
 }
 
-export function DeleteTransactionButton({ id }: { id: string }) {
+export function DeleteTransactionButton({
+  id,
+  showLabel = false,
+}: {
+  id: string;
+  showLabel?: boolean;
+}) {
   const router = useRouter();
   async function onDelete(e: React.MouseEvent) {
     e.preventDefault();
@@ -210,11 +234,17 @@ export function DeleteTransactionButton({ id }: { id: string }) {
   }
   return (
     <button
+      type="button"
       onClick={onDelete}
-      className="text-muted-foreground hover:text-red-500"
+      className={
+        showLabel
+          ? "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:text-red-500"
+          : "text-muted-foreground hover:text-red-500"
+      }
       aria-label="Delete transaction"
     >
       <Trash2 className="h-3.5 w-3.5" />
+      {showLabel && <span>Delete</span>}
     </button>
   );
 }

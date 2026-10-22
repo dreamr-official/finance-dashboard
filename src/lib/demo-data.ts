@@ -36,6 +36,7 @@ function acct(
   balance: number,
   opts: Partial<Account> = {},
 ): Account {
+  const isManual = opts.isManual ?? true;
   return {
     id,
     institutionId,
@@ -44,11 +45,11 @@ function acct(
     assetClass,
     currency: "USD",
     currentBalance: balance,
-    lastSyncedAt: opts.isManual
-      ? new Date(today.getTime() - 2 * 3600e3).toISOString()
-      : new Date(today.getTime() - 35 * 60e3).toISOString(),
-    isManual: opts.isManual ?? false,
-    connectionStatus: opts.connectionStatus ?? (opts.isManual ? "manual" : "healthy"),
+    lastSyncedAt:
+      opts.lastSyncedAt ??
+      (isManual ? null : new Date(today.getTime() - 35 * 60e3).toISOString()),
+    isManual,
+    connectionStatus: opts.connectionStatus ?? (isManual ? "manual" : "healthy"),
     mask: opts.mask,
   };
 }

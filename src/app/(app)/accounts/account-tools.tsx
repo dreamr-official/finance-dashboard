@@ -38,6 +38,7 @@ const TYPES = [
 export function AddAccountDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [accountType, setAccountType] = useState<(typeof TYPES)[number]>("checking");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -52,7 +53,7 @@ export function AddAccountDialog() {
       body: JSON.stringify({
         name: fd.get("name"),
         institution_name: fd.get("institution_name"),
-        type: fd.get("type"),
+        type: accountType,
         opening_balance: Number(fd.get("opening_balance")),
         opening_date: fd.get("opening_date") || undefined,
         mask: fd.get("mask") || undefined,
@@ -69,11 +70,11 @@ export function AddAccountDialog() {
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
         <Plus className="mr-1 h-4 w-4" /> Add account
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add manual account</DialogTitle>
             <DialogDescription>
@@ -98,8 +99,8 @@ export function AddAccountDialog() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Type</Label>
-                <Select name="type" defaultValue="checking">
-                  <SelectTrigger>
+                <Select value={accountType} onValueChange={(value) => value && setAccountType(value as (typeof TYPES)[number])}>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -118,7 +119,11 @@ export function AddAccountDialog() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="opening_balance">Opening balance</Label>
+                <Label htmlFor="opening_balance">
+                  {accountType === "credit_card" || accountType === "loan"
+                    ? "Amount owed"
+                    : "Opening balance"}
+                </Label>
                 <Input
                   id="opening_balance"
                   name="opening_balance"
@@ -133,7 +138,9 @@ export function AddAccountDialog() {
               </div>
             </div>
             {error && <p className="text-sm text-red-500">{String(error)}</p>}
-            <Button type="submit" disabled={loading}>{loading ? "Adding…" : "Add account"}</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Adding…" : "Add account"}
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -172,6 +179,7 @@ export function ImportCsvDialog({ account }: { account: Account }) {
   return (
     <>
       <button
+        type="button"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -182,7 +190,7 @@ export function ImportCsvDialog({ account }: { account: Account }) {
         <Upload className="h-3 w-3" /> CSV
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Import transactions — {account.name}</DialogTitle>
             <DialogDescription>
@@ -205,7 +213,9 @@ export function ImportCsvDialog({ account }: { account: Account }) {
               placeholder={"2026-01-15,ACH Deposit — Fidelity,2000.00,deposit"}
             />
             {result && <p className="text-sm">{result}</p>}
-            <Button type="submit" disabled={loading}>{loading ? "Importing…" : "Import"}</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Importing…" : "Import"}
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
