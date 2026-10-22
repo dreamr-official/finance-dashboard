@@ -1,4 +1,6 @@
 import { isDemoMode } from "@/lib/env";
+import { getProvider } from "@/lib/integrations/registry";
+import { syncAllConnections } from "@/lib/sync";
 import { timingSafeEqual } from "crypto";
 
 /**
@@ -21,6 +23,15 @@ export async function GET(req: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+  let syncWarning: string | undefined;
+  const encKey = process.env.TOKEN_ENCRYPTION_KEY;
+  if (getProvider("plaid")?.configured && encKey) {
+    try {
+      await syncAllConnections(supabase, encKey);
+    } catch (error) {
+      syncWarning = error instanceof Error ? error.message : "Plaid sync failed";
+    }
+  }
   const { data: accounts, error } = await supabase
     .from("accounts")
     .select("id, current_balance");
@@ -35,5 +46,9 @@ export async function GET(req: Request) {
     })),
   );
   if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
-  return Response.json({ snapshotted: accounts?.length ?? 0, date: today });
+  return Response.json({
+    snapshotted: accounts?.length ?? 0,
+    date: today,
+    ...(syncWarning ? { syncWarning } : {}),
+  });
 }

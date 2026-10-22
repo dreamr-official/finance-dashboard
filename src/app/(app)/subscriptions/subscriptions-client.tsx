@@ -52,19 +52,20 @@ function SubscriptionDialog({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [frequency, setFrequency] = useState(sub?.frequency ?? "monthly");
+  const [accountId, setAccountId] = useState(sub?.accountId ?? "none");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     const fd = new FormData(e.currentTarget);
-    const accountId = (fd.get("account_id") as string) || undefined;
     const payload = {
       name: fd.get("name"),
       amount: Number(fd.get("amount")),
-      frequency: fd.get("frequency"),
+      frequency,
       next_expected_date: fd.get("next_expected_date"),
-      ...(accountId ? { account_id: accountId } : {}),
+      account_id: accountId === "none" ? null : accountId,
     };
     const res = sub
       ? await fetch(`/api/subscriptions/${sub.id}`, {
@@ -88,7 +89,7 @@ function SubscriptionDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{sub ? `Edit ${sub.name}` : "Add subscription"}</DialogTitle>
           <DialogDescription>
@@ -114,8 +115,11 @@ function SubscriptionDialog({
             </div>
             <div>
               <Label>Frequency</Label>
-              <Select name="frequency" defaultValue={sub?.frequency ?? "monthly"}>
-                <SelectTrigger>
+              <Select
+                value={frequency}
+                onValueChange={(value) => value && setFrequency(value)}
+              >
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -140,11 +144,19 @@ function SubscriptionDialog({
           </div>
           <div>
             <Label>Charged to (optional)</Label>
-            <Select name="account_id" defaultValue={sub?.accountId ?? ""}>
-              <SelectTrigger>
-                <SelectValue placeholder="—" />
+            <Select
+              value={accountId}
+              onValueChange={(value) => value && setAccountId(value)}
+            >
+              <SelectTrigger className="w-full">
+                <span className="min-w-0 truncate text-left">
+                  {accountId === "none"
+                    ? "No account"
+                    : accounts.find((account) => account.id === accountId)?.name ?? "Choose account"}
+                </span>
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="none">No account</SelectItem>
                 {accounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
                     {a.name}
@@ -154,7 +166,9 @@ function SubscriptionDialog({
             </Select>
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <Button disabled={loading}>{loading ? "Saving…" : "Save"}</Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? "Saving…" : "Save"}
+          </Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -206,7 +220,10 @@ export function SubscriptionsClient({
   );
 
   const upcoming30 = subscriptions.filter(
-    (s) => s.status === "active" && daysUntil(s.nextExpectedDate) <= 30,
+    (s) =>
+      s.status === "active" &&
+      daysUntil(s.nextExpectedDate) >= 0 &&
+      daysUntil(s.nextExpectedDate) <= 30,
   );
   const upcoming7 = upcoming30.filter((s) => daysUntil(s.nextExpectedDate) <= 7);
   const markedDates = subscriptions
@@ -214,28 +231,28 @@ export function SubscriptionsClient({
     .map((s) => new Date(s.nextExpectedDate + "T12:00:00"));
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <Card className="min-w-0">
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="min-w-0">
             {upcoming7.length} due in 7 days · {upcoming30.length} in 30
           </CardTitle>
           <div className="flex items-center gap-2">
             {isAdmin && (
-              <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
                 <Plus className="mr-1 h-4 w-4" /> Add
               </Button>
             )}
             <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="Sort" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="date">Renewal date</SelectItem>
-              <SelectItem value="cost">Cost</SelectItem>
-              <SelectItem value="name">Name</SelectItem>
-            </SelectContent>
-          </Select>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date">Renewal date</SelectItem>
+                <SelectItem value="cost">Cost</SelectItem>
+                <SelectItem value="name">Name</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -254,7 +271,7 @@ export function SubscriptionsClient({
               {sorted.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    <div className="font-medium">{s.name}</div>
+                    <div className="max-w-48 truncate font-medium">{s.name}</div>
                     <div className="text-xs text-muted-foreground capitalize">
                       {s.frequency}
                       {s.detected ? " · auto-detected" : " · manual"}
@@ -270,7 +287,9 @@ export function SubscriptionsClient({
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {s.accountId ? acctById[s.accountId]?.name ?? "—" : "—"}
+                    <span className="block max-w-40 truncate">
+                      {s.accountId ? acctById[s.accountId]?.name ?? "—" : "—"}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -321,11 +340,11 @@ export function SubscriptionsClient({
       </Card>
 
       <div className="space-y-4">
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Calendar</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-w-0 px-2 sm:px-6">
             <Calendar
               mode="multiple"
               selected={markedDates}
@@ -345,6 +364,7 @@ export function SubscriptionsClient({
       />
       {editing && (
         <SubscriptionDialog
+          key={editing.id}
           accounts={accounts}
           sub={editing}
           open={!!editing}

@@ -1,7 +1,6 @@
 import {
   Account,
   BalanceSnapshot,
-  ContributionStats,
   NetWorthSummary,
   Transaction,
 } from "./types";
@@ -84,63 +83,6 @@ export function applyNetWorthChange(
     year: lookup(365),
   };
   return summary;
-}
-
-/** Contribution stats per investment account. Returns null returnPct when
- *  data is insufficient rather than showing a misleading number. */
-export function contributionStats(
-  account: Account,
-  transactions: Transaction[],
-  snapshots: BalanceSnapshot[],
-): ContributionStats {
-  const txns = transactions
-    .filter((t) => t.accountId === account.id)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  const totalDeposits = txns.filter(isContribution).reduce((s, t) => s + Math.abs(t.amount), 0);
-  const totalWithdrawals = txns.filter(isWithdrawal).reduce((s, t) => s + Math.abs(t.amount), 0);
-  const netContributions = totalDeposits - totalWithdrawals;
-  const simpleGain = account.currentBalance - netContributions;
-
-  const firstDate = txns[0]?.date;
-  const hasHistory = txns.length > 0 && snapshots.length > 0;
-  const returnPct =
-    hasHistory && netContributions > 0 ? (simpleGain / netContributions) * 100 : null;
-
-  const byMonth = new Map<string, number>();
-  for (const t of txns.filter(isContribution)) {
-    const m = t.date.slice(0, 7);
-    byMonth.set(m, (byMonth.get(m) ?? 0) + Math.abs(t.amount));
-  }
-  const contributionsByMonth = [...byMonth.entries()]
-    .map(([month, amount]) => ({ month, amount }))
-    .sort((a, b) => a.month.localeCompare(b.month));
-
-  const acctSnaps = snapshots
-    .filter((s) => s.accountId === account.id)
-    .sort((a, b) => a.date.localeCompare(b.date));
-  let cum = 0;
-  const depositByDate = new Map<string, number>();
-  for (const t of txns.filter((t) => isContribution(t) || isWithdrawal(t))) {
-    const signed = isContribution(t) ? Math.abs(t.amount) : -Math.abs(t.amount);
-    depositByDate.set(t.date, (depositByDate.get(t.date) ?? 0) + signed);
-  }
-  const series = acctSnaps.map((s) => {
-    cum += depositByDate.get(s.date) ?? 0;
-    return { date: s.date, value: s.balance, contributions: cum };
-  });
-
-  return {
-    accountId: account.id,
-    currentValue: account.currentBalance,
-    totalDeposits,
-    totalWithdrawals,
-    netContributions,
-    simpleGain,
-    returnPct,
-    contributionsByMonth,
-    series,
-  };
 }
 
 /** Roth IRA contributions for a tax year across all Roth accounts.

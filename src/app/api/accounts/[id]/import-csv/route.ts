@@ -1,5 +1,6 @@
 import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
+import { classifyType } from "@/lib/transactions";
 import { z } from "zod";
 import { createHash } from "crypto";
 
@@ -15,7 +16,7 @@ const VALID_TYPES = new Set([
 /** Parses CSV lines: date,name,amount[,type]
  *  - date: YYYY-MM-DD
  *  - amount: signed number (+ in, − out)
- *  - type (optional): one of txn_type; heuristics applied when absent
+ *  - type (optional): one of txn_type; inferred when absent
  *  Idempotent: provider_txn_id = sha256(row) → safe to re-import. */
 function parseCsv(csv: string) {
   const rows: {
@@ -36,14 +37,7 @@ function parseCsv(csv: string) {
     if (!Number.isFinite(amount)) continue;
     let type = typeRaw?.toLowerCase();
     if (!type || !VALID_TYPES.has(type)) {
-      type = amount >= 0 ? "income" : "expense";
-      if (/transfer|xfer|zelle/i.test(name)) {
-        type = amount >= 0 ? "transfer_in" : "transfer_out";
-      }
-      if (/dividend/i.test(name)) type = "dividend";
-      if (/interest/i.test(name)) type = "interest";
-      if (/deposit|contrib/i.test(name)) type = "deposit";
-      if (/withdraw/i.test(name)) type = "withdrawal";
+      type = classifyType(name, amount);
     }
     rows.push({
       provider_txn_id: `csv-${createHash("sha256").update(line).digest("hex").slice(0, 24)}`,
@@ -56,9 +50,7 @@ function parseCsv(csv: string) {
   return rows;
 }
 
-/** Admin-only: bulk-import transactions into an account (used for manual
- *  accounts and institutions without API history). Recomputes the
- *  account's current balance from its earliest snapshot + all txns. */
+/** Admin-only: bulk-import transactions into a manual account. */
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -76,7 +68,9 @@ export async function POST(
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }
-  const rows = parseCsv(body.data.csv);
+  const rows = [
+    ...new Map(parseCsv(body.data.csv).map((row) => [row.provider_txn_id, row])).values(),
+  ];
   if (!rows.length) {
     return Response.json(
       { error: "No valid rows — expected date,name,amount[,type]" },
@@ -89,19 +83,55 @@ export async function POST(
 
   const { data: acct, error: acctErr } = await supabase
     .from("accounts")
-    .select("id, current_balance")
+    .select("id,current_balance,is_manual")
     .eq("id", id)
-    .single();
-  if (acctErr || !acct) {
-    return Response.json({ error: "Account not found" }, { status: 404 });
+    .maybeSingle();
+  if (acctErr) return Response.json({ error: acctErr.message }, { status: 500 });
+  if (!acct) return Response.json({ error: "Account not found" }, { status: 404 });
+  if (!acct.is_manual) {
+    return Response.json({ error: "CSV imports are only available for manual accounts" }, { status: 400 });
   }
+
+  const providerTxnIds = rows.map((row) => row.provider_txn_id);
+  const { data: existingRows, error: existingError } = await supabase
+    .from("transactions")
+    .select("provider_txn_id,amount,type,type_overridden")
+    .eq("account_id", id)
+    .in("provider_txn_id", providerTxnIds);
+  if (existingError) return Response.json({ error: existingError.message }, { status: 500 });
+  const existingById = new Map((existingRows ?? []).map((row) => [row.provider_txn_id, row]));
+  const delta = rows.reduce((sum, row) => {
+    const existing = existingById.get(row.provider_txn_id);
+    return sum + row.amount - (existing ? Number(existing.amount) : 0);
+  }, 0);
+  const upsertRows = rows.map((row) => {
+    const existing = existingById.get(row.provider_txn_id);
+    return {
+      ...row,
+      account_id: id,
+      type: existing?.type_overridden ? existing.type : row.type,
+      type_overridden: existing?.type_overridden ?? false,
+    };
+  });
 
   const { error: upErr } = await supabase
     .from("transactions")
-    .upsert(rows.map((r) => ({ ...r, account_id: id })), {
+    .upsert(upsertRows, {
       onConflict: "account_id,provider_txn_id",
     });
   if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
+
+  const balance = Number(acct.current_balance) + delta;
+  const { error: balanceError } = await supabase
+    .from("accounts")
+    .update({ current_balance: balance })
+    .eq("id", id);
+  if (balanceError) return Response.json({ error: balanceError.message }, { status: 500 });
+  const today = new Date().toISOString().slice(0, 10);
+  const { error: snapshotError } = await supabase
+    .from("balance_snapshots")
+    .upsert({ account_id: id, date: today, balance });
+  if (snapshotError) return Response.json({ error: snapshotError.message }, { status: 500 });
 
   return Response.json({ imported: rows.length });
 }

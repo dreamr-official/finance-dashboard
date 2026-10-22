@@ -7,7 +7,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getSessionUser();
   if (!user) redirect("/login");
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen flex-col md:flex-row">
       <AppSidebar demoMode={isDemoMode()} role={user.role} />
       <main className="min-w-0 flex-1 px-4 py-6 md:px-8">{children}</main>
     </div>

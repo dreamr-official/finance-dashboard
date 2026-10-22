@@ -30,7 +30,9 @@ export function NetWorthChart({
   const filtered = useMemo(() => {
     const r = RANGES.find((x) => x.key === range)!;
     if (r.days === Infinity) return data;
-    const cutoff = new Date(data[data.length - 1]?.date ?? Date.now());
+    const lastDate = data[data.length - 1]?.date;
+    if (!lastDate) return data;
+    const cutoff = new Date(lastDate);
     cutoff.setDate(cutoff.getDate() - r.days);
     return data.filter((p) => new Date(p.date) >= cutoff);
   }, [data, range]);

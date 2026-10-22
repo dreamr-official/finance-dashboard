@@ -58,25 +58,55 @@ export async function DELETE(
   const { id } = await params;
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
-  const { data: txn } = await supabase
+  const { data: txn, error: txnError } = await supabase
     .from("transactions")
-    .select("account_id, amount")
+    .select("id,account_id,amount,transfer_pair_id")
     .eq("id", id)
     .single();
+  if (txnError && txnError.code !== "PGRST116") {
+    return Response.json({ error: txnError.message }, { status: 500 });
+  }
   if (!txn) return Response.json({ error: "Not found" }, { status: 404 });
-  const { error } = await supabase.from("transactions").delete().eq("id", id);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  const { data: acct } = await supabase
+  let txns = [txn];
+  if (txn.transfer_pair_id) {
+    const { data: pair, error: pairError } = await supabase
+      .from("transactions")
+      .select("id,account_id,amount,transfer_pair_id")
+      .eq("transfer_pair_id", txn.transfer_pair_id);
+    if (pairError) return Response.json({ error: pairError.message }, { status: 500 });
+    txns = pair ?? [txn];
+  }
+  const accountIds = [...new Set(txns.map((row) => row.account_id))];
+  const { data: accounts, error: accountError } = await supabase
     .from("accounts")
-    .select("current_balance")
-    .eq("id", txn.account_id)
-    .single();
-  if (acct) {
-    const balance = Number(acct.current_balance) - Number(txn.amount);
-    await supabase
+    .select("id,current_balance,is_manual")
+    .in("id", accountIds);
+  if (accountError) return Response.json({ error: accountError.message }, { status: 500 });
+  const today = new Date().toISOString().slice(0, 10);
+  for (const account of accounts ?? []) {
+    if (!account.is_manual) continue;
+    const delta = txns
+      .filter((row) => row.account_id === account.id)
+      .reduce((sum, row) => sum + Number(row.amount), 0);
+    const balance = Number(account.current_balance) - delta;
+    const { error: balanceError } = await supabase
       .from("accounts")
       .update({ current_balance: balance })
-      .eq("id", txn.account_id);
+      .eq("id", account.id);
+    if (balanceError) {
+      return Response.json({ error: balanceError.message }, { status: 500 });
+    }
+    const { error: snapshotError } = await supabase
+      .from("balance_snapshots")
+      .upsert({ account_id: account.id, date: today, balance });
+    if (snapshotError) {
+      return Response.json({ error: snapshotError.message }, { status: 500 });
+    }
   }
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .in("id", txns.map((row) => row.id));
+  if (error) return Response.json({ error: error.message }, { status: 500 });
   return new Response(null, { status: 204 });
 }

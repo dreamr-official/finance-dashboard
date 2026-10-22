@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { notFound } from "next/navigation";
+import { TransferButton } from "../transfer-dialog";
 
 
 const TYPE_LABEL: Record<string, string> = {
@@ -52,15 +53,16 @@ export default async function AccountPage({
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <div className="flex items-start justify-between">
-          <div>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-sm text-muted-foreground">{inst?.name}</p>
-            <h1 className="text-2xl font-semibold tracking-tight">{account.name}</h1>
+            <h1 className="truncate text-2xl font-semibold tracking-tight">{account.name}</h1>
           </div>
           {isAdmin && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <AddTransactionButton account={account} />
+              <TransferButton accounts={accounts} initialFromAccountId={account.id} />
               <EditAccountButton account={account} />
             </div>
           )}
@@ -72,7 +74,7 @@ export default async function AccountPage({
           {account.lastSyncedAt
             ? `Last synced ${new Date(account.lastSyncedAt).toLocaleString()}`
             : "Never synced"}
-          {account.isManual ? " · manual account" : ""}
+          {account.isManual ? " · manual account" : " · balance comes from bank sync"}
         </div>
       </div>
 

@@ -7,7 +7,7 @@ const subSchema = z.object({
   amount: z.number().positive(),
   frequency: z.enum(["weekly", "monthly", "quarterly", "annual"]),
   next_expected_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  account_id: z.string().uuid().optional(),
+  account_id: z.string().uuid().nullable().optional(),
   remind_days_before: z.number().int().min(0).max(90).optional(),
 });
 

@@ -55,25 +55,40 @@ export async function POST(req: Request) {
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
 
-  const { data: inst, error: instErr } = await supabase
+  const { data: existingInstitution, error: existingInstitutionError } = await supabase
     .from("institutions")
-    .upsert(
-      { name: body.data.institution_name, provider: "manual" },
-      { onConflict: "name" },
-    )
-    .select()
-    .single();
-  if (instErr) return Response.json({ error: instErr.message }, { status: 500 });
+    .select("id")
+    .eq("name", body.data.institution_name)
+    .eq("provider", "manual")
+    .maybeSingle();
+  if (existingInstitutionError) {
+    return Response.json({ error: existingInstitutionError.message }, { status: 500 });
+  }
+  let institutionId = existingInstitution?.id;
+  if (!institutionId) {
+    const { data: inst, error: instErr } = await supabase
+      .from("institutions")
+      .insert({ name: body.data.institution_name, provider: "manual" })
+      .select("id")
+      .single();
+    if (instErr) return Response.json({ error: instErr.message }, { status: 500 });
+    institutionId = inst.id;
+  }
+
+  const openingBalance =
+    body.data.type === "credit_card" || body.data.type === "loan"
+      ? -Math.abs(body.data.opening_balance)
+      : body.data.opening_balance;
 
   const { data: acct, error: acctErr } = await supabase
     .from("accounts")
     .insert({
-      institution_id: inst.id,
+      institution_id: institutionId,
       name: body.data.name,
       type: body.data.type,
       asset_class: ASSET_CLASS_BY_TYPE[body.data.type],
       mask: body.data.mask,
-      current_balance: body.data.opening_balance,
+      current_balance: openingBalance,
       is_manual: true,
       connection_status: "manual",
     })
@@ -83,11 +98,14 @@ export async function POST(req: Request) {
 
   const date =
     body.data.opening_date ?? new Date().toISOString().slice(0, 10);
-  await supabase.from("balance_snapshots").upsert({
+  const { error: snapshotError } = await supabase.from("balance_snapshots").upsert({
     account_id: acct.id,
     date,
-    balance: body.data.opening_balance,
+    balance: openingBalance,
   });
+  if (snapshotError) {
+    return Response.json({ error: snapshotError.message }, { status: 500 });
+  }
 
   return Response.json(acct, { status: 201 });
 }

@@ -7,6 +7,7 @@ import {
   TrendingUp,
   Repeat,
   Wallet,
+  ArrowLeftRight,
   Settings,
   Menu,
   Sun,
@@ -22,8 +23,9 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 const NAV = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/investments", label: "Investments", icon: TrendingUp },
-  { href: "/subscriptions", label: "Subscriptions", icon: Repeat },
   { href: "/accounts", label: "Accounts", icon: Wallet },
+  { href: "/activity", label: "Activity", icon: ArrowLeftRight },
+  { href: "/subscriptions", label: "Subscriptions", icon: Repeat },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -74,7 +76,13 @@ function Footer({ demoMode, role }: { demoMode: boolean; role: string }) {
             <Moon className="hidden h-4 w-4 dark:block" />
           </Button>
           <form action="/api/auth/signout" method="post">
-            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Sign out">
+            <Button
+              type="submit"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              aria-label="Sign out"
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           </form>

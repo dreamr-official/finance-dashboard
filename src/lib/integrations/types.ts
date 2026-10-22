@@ -19,7 +19,7 @@ export interface ProviderTransaction {
   date: string;
   name: string;
   amount: number;
-  suggestedType: string;
+  suggestedType?: string;
   category?: string;
   pending?: boolean;
 }
@@ -44,19 +44,20 @@ export interface LinkResult {
 export interface SyncResult {
   accounts: ProviderAccount[];
   transactions: ProviderTransaction[];
+  removedTxnIds: string[];
   holdings: ProviderHolding[];
   cursor?: string; // for incremental sync
 }
 
 export interface FinanceProvider {
-  readonly id: "plaid" | "snaptrade" | "teller" | "manual";
+  readonly id: "plaid";
   readonly configured: boolean;
   /** Begin a connection flow (e.g. Plaid Link token). */
   createLink(userId: string): Promise<LinkResult>;
-  /** Exchange a public token / complete OAuth; returns connection id. */
-  completeLink(payload: Record<string, string>): Promise<{ connectionId: string }>;
+  /** Exchange a public token / complete OAuth; returns an access token for server-side storage. */
+  completeLink(payload: Record<string, string>): Promise<{ itemId: string; accessToken: string }>;
   /** Pull accounts + transactions + holdings for a connection. */
-  sync(connectionId: string, cursor?: string): Promise<SyncResult>;
+  sync(accessToken: string, cursor?: string): Promise<SyncResult>;
   /** Mark a broken connection for re-auth. */
-  requestReauth(connectionId: string): Promise<void>;
+  requestReauth(accessToken: string): Promise<void>;
 }
