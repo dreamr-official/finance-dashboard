@@ -1,6 +1,7 @@
 import { getDataset } from "@/lib/data/provider";
 import { getSessionUser } from "@/lib/auth";
-import { fmtCurrency } from "@/lib/format";
+import { capSlices, groupHoldingsBySymbol, holdingsWithShare } from "@/lib/holdings";
+import { fmtCompact, fmtCurrency, fmtShare } from "@/lib/format";
 import {
   AddPastBalanceButton,
   AddTransactionButton,
@@ -9,6 +10,7 @@ import {
   RebuildHistoryButton,
 } from "./account-actions";
 import { BalanceChart } from "@/components/balance-chart";
+import { DonutChart } from "@/components/charts/donut-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -52,6 +54,12 @@ export default async function AccountPage({
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 50);
   const acctHoldings = holdings.filter((h) => h.accountId === id);
+  const holdingShares = holdingsWithShare(acctHoldings);
+  const holdingTotal = holdingShares.reduce((sum, holding) => sum + holding.value, 0);
+  const showHoldings =
+    account.assetClass === "investment" ||
+    account.assetClass === "retirement" ||
+    acctHoldings.length > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -102,67 +110,128 @@ export default async function AccountPage({
         </Card>
       )}
 
-      {acctHoldings.length > 0 && (
+      {showHoldings && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle>Holdings</CardTitle>
+            {acctHoldings.length > 0 && (
+              <span className="shrink-0 text-right text-xs font-normal text-muted-foreground">
+                {holdingShares.length} positions · {fmtCurrency(holdingTotal)}
+              </span>
+            )}
           </CardHeader>
-          <CardContent className="space-y-3 p-3 md:hidden">
-            {acctHoldings.map((h) => (
-              <article key={h.id} className="rounded-lg border bg-background p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium">{h.symbol}</div>
-                    <div className="text-xs text-muted-foreground">{h.name}</div>
-                  </div>
-                  <div className="shrink-0 text-right font-medium tabular-nums">
-                    {fmtCurrency(h.value)}
-                  </div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Quantity</div>
-                    <div className="tabular-nums">{h.quantity}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Price</div>
-                    <div className="tabular-nums">{fmtCurrency(h.price)}</div>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </CardContent>
-          <div className="hidden md:block">
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {acctHoldings.map((h) => (
-                    <TableRow key={h.id}>
-                      <TableCell>
-                        <div className="font-medium">{h.symbol}</div>
-                        <div className="text-xs text-muted-foreground">{h.name}</div>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{h.quantity}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {fmtCurrency(h.price)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {fmtCurrency(h.value)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+          {!acctHoldings.length ? (
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                No holdings yet — link via Plaid (Settings → Grant investment access) or add manually.
+              </p>
             </CardContent>
-          </div>
+          ) : (
+            <CardContent className="space-y-5">
+              <DonutChart
+                data={capSlices(groupHoldingsBySymbol(acctHoldings))}
+                centerValue={fmtCompact(holdingTotal)}
+                centerLabel="Holdings"
+              />
+              <div className="space-y-3 md:hidden">
+                {holdingShares.map((h) => {
+                  const gainLoss = h.costBasis === undefined ? undefined : h.value - h.costBasis;
+                  return (
+                    <article key={h.id} className="rounded-lg border bg-background p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-medium">{h.symbol}</div>
+                          <div className="truncate text-xs text-muted-foreground">{h.name}</div>
+                        </div>
+                        <div className="shrink-0 text-right font-medium tabular-nums">
+                          {fmtCurrency(h.value)}
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Quantity</div>
+                          <div className="tabular-nums">
+                            {h.quantity.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Price</div>
+                          <div className="tabular-nums">{fmtCurrency(h.price)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">% of account</div>
+                          <div className="tabular-nums">{fmtShare(h.pct)}</div>
+                        </div>
+                        {h.costBasis !== undefined && (
+                          <>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Cost basis</div>
+                              <div className="tabular-nums">{fmtCurrency(h.costBasis)}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Gain / loss</div>
+                              <div
+                                className={`tabular-nums ${
+                                  gainLoss! >= 0
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-red-600 dark:text-red-400"
+                                }`}
+                              >
+                                {fmtCurrency(gainLoss!, { sign: true })}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="hidden md:block">
+                <div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Symbol</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Price</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead className="text-right">% of account</TableHead>
+                        <TableHead className="text-right">Cost basis</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {holdingShares.map((h) => (
+                        <TableRow key={h.id}>
+                          <TableCell>
+                            <div className="font-medium">{h.symbol}</div>
+                            <div className="max-w-48 truncate text-xs text-muted-foreground">
+                              {h.name}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {h.quantity.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fmtCurrency(h.price)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fmtCurrency(h.value)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {fmtShare(h.pct)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {h.costBasis === undefined ? "—" : fmtCurrency(h.costBasis)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </CardContent>
+          )}
         </Card>
       )}
 

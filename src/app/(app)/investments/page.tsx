@@ -1,16 +1,21 @@
 import { getDataset } from "@/lib/data/provider";
 import { rothContributions, DEFAULT_ROTH_LIMITS } from "@/lib/finance";
-import { fmtCurrency } from "@/lib/format";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ContributionsChart } from "@/components/contributions-chart";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  capSlices,
+  groupHoldingsByAssetType,
+  groupHoldingsBySymbol,
+  holdingsWithShare,
+} from "@/lib/holdings";
+import { fmtCompact, fmtCurrency, fmtShare } from "@/lib/format";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ContributionsChart } from "@/components/contributions-chart";
+import { DonutChart } from "@/components/charts/donut-chart";
 import Link from "next/link";
 
 
@@ -22,6 +27,10 @@ export default async function InvestmentsPage() {
     (a) => a.assetClass === "investment" || a.assetClass === "retirement",
   );
   const investAccountIds = new Set(investAccounts.map((a) => a.id));
+  const investHoldings = holdings.filter((holding) => investAccountIds.has(holding.accountId));
+  const symbolGroups = groupHoldingsBySymbol(investHoldings);
+  const assetTypeSlices = groupHoldingsByAssetType(investHoldings);
+  const holdingTotal = symbolGroups.reduce((sum, holding) => sum + holding.value, 0);
   const contributions = transactions.filter(
     (transaction) => transaction.type === "deposit" && investAccountIds.has(transaction.accountId),
   );
@@ -149,6 +158,79 @@ export default async function InvestmentsPage() {
         </Card>
       </div>
 
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>All holdings</CardTitle>
+            <CardDescription>
+              Across {investAccounts.length} accounts ·{" "}
+              {fmtCurrency(holdingTotal, { decimals: 0 })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {symbolGroups.length ? (
+              <>
+                <DonutChart
+                  data={capSlices(symbolGroups)}
+                  centerValue={fmtCompact(holdingTotal)}
+                  centerLabel="Invested"
+                />
+                <div className="divide-y">
+                  {symbolGroups.map((holding) => (
+                    <div
+                      key={holding.key}
+                      className="flex min-w-0 items-center justify-between gap-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="shrink-0 font-medium">{holding.symbol}</span>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {holding.name}
+                          </span>
+                        </div>
+                        {holding.accountIds.length > 1 && (
+                          <div className="text-xs text-muted-foreground">
+                            {holding.accountIds.length} accounts
+                          </div>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="tabular-nums">{fmtCurrency(holding.value)}</div>
+                        <div className="text-xs tabular-nums text-muted-foreground">
+                          {fmtShare(holding.pct)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No holdings yet — link via Plaid (Settings → Grant investment access) or add manually.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Allocation by type</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {assetTypeSlices.length ? (
+              <DonutChart
+                data={assetTypeSlices}
+                centerValue={fmtCompact(holdingTotal)}
+                centerLabel="Invested"
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No holdings yet — link via Plaid (Settings → Grant investment access) or add manually.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Contributions over time</CardTitle>
@@ -197,6 +279,9 @@ export default async function InvestmentsPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         {stats.map((s) => {
           const acct = s.account;
+          const accountHoldings = holdingsWithShare(
+            holdings.filter((holding) => holding.accountId === acct.id),
+          );
           return (
             <Card key={acct.id}>
               <CardHeader>
@@ -249,34 +334,30 @@ export default async function InvestmentsPage() {
                     <p className="text-xs text-muted-foreground">No deposits or withdrawals yet.</p>
                   )}
                 </div>
-                {holdings.filter((h) => h.accountId === acct.id).length > 0 && (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Symbol</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead className="text-right">Value</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {holdings
-                        .filter((h) => h.accountId === acct.id)
-                        .map((h) => (
-                          <TableRow key={h.id}>
-                            <TableCell>
-                              <div className="font-medium">{h.symbol}</div>
-                              <div className="text-xs text-muted-foreground">{h.name}</div>
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {h.quantity}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {fmtCurrency(h.value, { decimals: 0 })}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
+                {accountHoldings.length > 0 && (
+                  <div className="divide-y">
+                    {accountHoldings.map((holding) => (
+                      <div
+                        key={holding.id}
+                        className="flex min-w-0 items-center justify-between gap-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium">{holding.symbol}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {holding.name}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="tabular-nums">
+                            {fmtCurrency(holding.value, { decimals: 0 })}
+                          </div>
+                          <div className="text-xs tabular-nums text-muted-foreground">
+                            {fmtShare(holding.pct)} of account
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>

@@ -24,6 +24,10 @@ export function fmtPct(n: number | null, decimals = 1) {
   return `${n >= 0 ? "+" : ""}${n.toFixed(decimals)}%`;
 }
 
+export function fmtShare(n: number, decimals = 1) {
+  return `${n.toFixed(decimals)}%`;
+}
+
 export function fmtDate(d: string | Date) {
   return new Date(d).toLocaleDateString("en-US", {
     month: "short",
