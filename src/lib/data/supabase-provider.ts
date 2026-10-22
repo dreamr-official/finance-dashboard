@@ -8,17 +8,21 @@ import type { Account, Transaction } from "../types";
  */
 export async function fetchDataset(): Promise<Dataset> {
   const supabase = await createClient();
-  const [inst, accts, snaps, txns, holds, subs] = await Promise.all([
+  const [inst, accts, snaps, txns, holds, subs, connections] = await Promise.all([
     supabase.from("institutions").select("*"),
     supabase.from("accounts").select("*"),
     supabase.from("balance_snapshots").select("*").order("date"),
     supabase.from("transactions").select("*").order("date", { ascending: false }).limit(5000),
     supabase.from("holdings").select("*"),
     supabase.from("subscriptions").select("*"),
+    supabase.from("connection_notices").select("id,notice"),
   ]);
-  for (const r of [inst, accts, snaps, txns, holds, subs]) {
+  for (const r of [inst, accts, snaps, txns, holds, subs, connections]) {
     if (r.error) throw new Error(`Supabase query failed: ${r.error.message}`);
   }
+  const noticeByConnectionId = new Map(
+    (connections.data ?? []).map((connection) => [connection.id, connection.notice]),
+  );
   return {
     institutions: (inst.data ?? []).map((i) => ({
       id: i.id,
@@ -39,6 +43,9 @@ export async function fetchDataset(): Promise<Dataset> {
         lastSyncedAt: a.last_synced_at,
         isManual: a.is_manual,
         connectionStatus: a.connection_status,
+        connectionNotice: a.connection_id
+          ? noticeByConnectionId.get(a.connection_id) ?? null
+          : null,
       }),
     ),
     snapshots: (snaps.data ?? []).map((s) => ({

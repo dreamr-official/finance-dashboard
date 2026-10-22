@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePlaidLink } from "react-plaid-link";
 import { Button } from "@/components/ui/button";
 
 export interface PlaidConnection {
@@ -10,6 +11,77 @@ export interface PlaidConnection {
   status: string;
   lastSyncedAt: string | null;
   lastError: string | null;
+  notice: string | null;
+}
+
+function GrantInvestmentAccessButton({ connectionId }: { connectionId: string }) {
+  const router = useRouter();
+  const [token, setToken] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const openWhenReady = useRef(false);
+
+  async function onSuccess() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/sync", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Sync failed.");
+      setMessage("Investment access granted; sync complete.");
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Sync failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const { open, ready } = usePlaidLink({
+    token,
+    onSuccess,
+    onExit: () => setBusy(false),
+  });
+
+  useEffect(() => {
+    if (ready && openWhenReady.current) {
+      open();
+      openWhenReady.current = false;
+    }
+  }, [open, ready, token]);
+
+  async function grantAccess() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/integrations/plaid/${connectionId}/link-token`,
+        { method: "POST" },
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Could not start Plaid Link.");
+      openWhenReady.current = true;
+      setToken(result.linkToken);
+    } catch (error) {
+      setBusy(false);
+      setMessage(error instanceof Error ? error.message : "Could not start Plaid Link.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={grantAccess}
+      >
+        {busy ? "Opening…" : "Grant investment access"}
+      </Button>
+      {message && <p className="text-xs text-muted-foreground">{message}</p>}
+    </div>
+  );
 }
 
 export function PlaidConnections({
@@ -60,16 +132,24 @@ export function PlaidConnections({
                   {connection.lastError}
                 </div>
               )}
+              {connection.notice && (
+                <div className="mt-1 break-words text-xs text-amber-700 dark:text-amber-400">
+                  {connection.notice}
+                </div>
+              )}
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={removingId === connection.id}
-              onClick={() => remove(connection)}
-            >
-              {removingId === connection.id ? "Removing…" : "Remove"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <GrantInvestmentAccessButton connectionId={connection.id} />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={removingId === connection.id}
+                onClick={() => remove(connection)}
+              >
+                {removingId === connection.id ? "Removing…" : "Remove"}
+              </Button>
+            </div>
           </div>
         </div>
       ))}

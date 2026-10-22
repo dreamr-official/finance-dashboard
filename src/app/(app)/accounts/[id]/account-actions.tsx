@@ -20,7 +20,108 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, History } from "lucide-react";
+
+export function AddPastBalanceButton({ accountId }: { accountId: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    const response = await fetch(`/api/accounts/${accountId}/snapshots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: form.get("date"),
+        balance: Number(form.get("balance")),
+      }),
+    });
+    setLoading(false);
+    if (!response.ok) {
+      const result = await response.json();
+      setError(typeof result.error === "string" ? result.error : "Could not save balance.");
+      return;
+    }
+    setOpen(false);
+    router.refresh();
+  }
+
+  return (
+    <>
+      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+        Add past balance
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add past balance</DialogTitle>
+            <DialogDescription>
+              Record a known balance without changing the account&apos;s current balance.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={onSubmit} className="flex flex-col gap-3">
+            <div>
+              <Label htmlFor="snapshot-date">Date</Label>
+              <Input id="snapshot-date" name="date" type="date" max={today} required />
+            </div>
+            <div>
+              <Label htmlFor="snapshot-balance">Balance</Label>
+              <Input
+                id="snapshot-balance"
+                name="balance"
+                type="number"
+                step="0.01"
+                required
+              />
+            </div>
+            {error && <p className="text-sm text-red-500">{error}</p>}
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving…" : "Save past balance"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+export function RebuildHistoryButton({ accountId }: { accountId: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function rebuild() {
+    setLoading(true);
+    setMessage(null);
+    const response = await fetch(`/api/accounts/${accountId}/rebuild-history`, {
+      method: "POST",
+    });
+    const result = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setMessage(typeof result.error === "string" ? result.error : "Could not rebuild history.");
+      return;
+    }
+    setMessage(`Added ${result.reconstructed} reconstructed balance days.`);
+    router.refresh();
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <Button type="button" size="sm" variant="outline" onClick={rebuild} disabled={loading}>
+        <History className="mr-1 h-4 w-4" />
+        {loading ? "Rebuilding…" : "Rebuild history from transactions"}
+      </Button>
+      {message && <p className="text-xs text-muted-foreground">{message}</p>}
+    </div>
+  );
+}
 
 const TXN_TYPES = [
   { value: "deposit", label: "Deposit / contribution" },

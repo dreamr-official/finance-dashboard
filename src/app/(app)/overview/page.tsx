@@ -191,6 +191,9 @@ export default async function OverviewPage() {
         </CardHeader>
         <CardContent>
           <NetWorthChart data={series} />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Accounts without history are shown at their earliest known balance.
+          </p>
         </CardContent>
       </Card>
 

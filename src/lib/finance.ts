@@ -50,14 +50,21 @@ export function netWorthSeries(
     arr.push(s);
     byAccount.set(s.accountId, arr);
   }
+  for (const arr of byAccount.values()) {
+    arr.sort((a, b) => a.date.localeCompare(b.date));
+  }
   const dates = [...new Set(snapshots.map((s) => s.date))].sort();
   const last: Record<string, number> = {};
   for (const a of accounts) last[a.id] = a.currentBalance;
   return dates.map((d) => {
     let total = 0;
     for (const a of accounts) {
-      const snaps = (byAccount.get(a.id) ?? []).filter((s) => s.date <= d);
-      const v = snaps.length ? snaps[snaps.length - 1].balance : last[a.id];
+      const snaps = byAccount.get(a.id) ?? [];
+      let v = snaps[0]?.balance ?? last[a.id];
+      for (const snapshot of snaps) {
+        if (snapshot.date > d) break;
+        v = snapshot.balance;
+      }
       total += a.assetClass === "liability" ? -Math.abs(v) : v;
     }
     return { date: d, value: total };

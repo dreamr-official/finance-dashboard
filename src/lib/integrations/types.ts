@@ -32,6 +32,7 @@ export interface ProviderHolding {
   price: number;
   value: number;
   costBasis?: number;
+  assetType: "stock" | "etf" | "mutual_fund" | "cash" | "bond" | "crypto" | "other";
 }
 
 export interface LinkResult {
@@ -47,6 +48,8 @@ export interface SyncResult {
   removedTxnIds: string[];
   holdings: ProviderHolding[];
   cursor?: string; // for incremental sync
+  holdingsSynced?: boolean;
+  notice?: string | null;
 }
 
 export interface FinanceProvider {
@@ -57,7 +60,11 @@ export interface FinanceProvider {
   /** Exchange a public token / complete OAuth; returns an access token for server-side storage. */
   completeLink(payload: Record<string, string>): Promise<{ itemId: string; accessToken: string }>;
   /** Pull accounts + transactions + holdings for a connection. */
-  sync(accessToken: string, cursor?: string): Promise<SyncResult>;
+  sync(
+    accessToken: string,
+    cursor?: string,
+    investmentStartDate?: string,
+  ): Promise<SyncResult>;
   /** Mark a broken connection for re-auth. */
   requestReauth(accessToken: string): Promise<void>;
 }

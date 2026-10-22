@@ -33,6 +33,7 @@ export interface Account {
   lastSyncedAt: string | null;
   isManual: boolean;
   connectionStatus: "healthy" | "needs_reauth" | "error" | "manual";
+  connectionNotice?: string | null;
 }
 
 export interface BalanceSnapshot {
