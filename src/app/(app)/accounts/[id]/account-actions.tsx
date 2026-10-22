@@ -219,7 +219,13 @@ export function EditAccountButton({ account }: { account: Account }) {
   );
 }
 
-export function DeleteTransactionButton({ id }: { id: string }) {
+export function DeleteTransactionButton({
+  id,
+  showLabel = false,
+}: {
+  id: string;
+  showLabel?: boolean;
+}) {
   const router = useRouter();
   async function onDelete(e: React.MouseEvent) {
     e.preventDefault();
@@ -228,11 +234,17 @@ export function DeleteTransactionButton({ id }: { id: string }) {
   }
   return (
     <button
+      type="button"
       onClick={onDelete}
-      className="text-muted-foreground hover:text-red-500"
+      className={
+        showLabel
+          ? "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:text-red-500"
+          : "text-muted-foreground hover:text-red-500"
+      }
       aria-label="Delete transaction"
     >
       <Trash2 className="h-3.5 w-3.5" />
+      {showLabel && <span>Delete</span>}
     </button>
   );
 }

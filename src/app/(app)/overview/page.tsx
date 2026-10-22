@@ -64,7 +64,7 @@ export default async function OverviewPage() {
         <StatCard title="Assets" value={fmtCompact(summary.assets)} />
         <StatCard title="Liabilities" value={fmtCompact(summary.liabilities)} />
         <StatCard title="Cash" value={fmtCompact(summary.cash)} />
-        <StatCard title="Investments" value={fmtCompact(summary.investments)} />
+        <StatCard title="Invested (incl. retirement)" value={fmtCompact(summary.investments)} />
       </div>
 
       <Card>

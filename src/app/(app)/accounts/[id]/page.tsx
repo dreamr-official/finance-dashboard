@@ -94,35 +94,62 @@ export default async function AccountPage({
           <CardHeader>
             <CardTitle>Holdings</CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Price</TableHead>
-                  <TableHead className="text-right">Value</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {acctHoldings.map((h) => (
-                  <TableRow key={h.id}>
-                    <TableCell>
-                      <div className="font-medium">{h.symbol}</div>
-                      <div className="text-xs text-muted-foreground">{h.name}</div>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{h.quantity}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {fmtCurrency(h.price)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {fmtCurrency(h.value)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="space-y-3 p-3 md:hidden">
+            {acctHoldings.map((h) => (
+              <article key={h.id} className="rounded-lg border bg-background p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium">{h.symbol}</div>
+                    <div className="text-xs text-muted-foreground">{h.name}</div>
+                  </div>
+                  <div className="shrink-0 text-right font-medium tabular-nums">
+                    {fmtCurrency(h.value)}
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Quantity</div>
+                    <div className="tabular-nums">{h.quantity}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Price</div>
+                    <div className="tabular-nums">{fmtCurrency(h.price)}</div>
+                  </div>
+                </div>
+              </article>
+            ))}
           </CardContent>
+          <div className="hidden md:block">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Symbol</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-right">Value</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {acctHoldings.map((h) => (
+                    <TableRow key={h.id}>
+                      <TableCell>
+                        <div className="font-medium">{h.symbol}</div>
+                        <div className="text-xs text-muted-foreground">{h.name}</div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{h.quantity}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmtCurrency(h.price)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmtCurrency(h.value)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </div>
         </Card>
       )}
 
@@ -130,47 +157,86 @@ export default async function AccountPage({
         <CardHeader>
           <CardTitle>Recent transactions</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                {isAdmin && <TableHead className="w-8" />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {txns.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="text-muted-foreground">{t.date}</TableCell>
-                  <TableCell>{t.name}</TableCell>
-                  <TableCell>
+        <CardContent className="space-y-3 p-3 md:hidden">
+          {txns.map((t) => (
+            <article key={t.id} className="rounded-lg border bg-background p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{t.name}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{t.date}</span>
                     <Badge variant={t.type === "deposit" ? "default" : "outline"}>
                       {TYPE_LABEL[t.type] ?? t.type}
                     </Badge>
-                  </TableCell>
-                  <TableCell
-                    className={
-                      "text-right tabular-nums " +
-                      (t.amount >= 0
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "")
-                    }
-                  >
-                    {fmtCurrency(t.amount, { sign: true })}
-                  </TableCell>
-                  {isAdmin && (
-                    <TableCell>
-                      <DeleteTransactionButton id={t.id} />
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </div>
+                </div>
+                <div
+                  className={
+                    "shrink-0 text-right font-medium tabular-nums " +
+                    (t.amount >= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "")
+                  }
+                >
+                  {fmtCurrency(t.amount, { sign: true })}
+                </div>
+              </div>
+              {isAdmin && (
+                <div className="mt-3 flex justify-end border-t pt-3">
+                  <DeleteTransactionButton id={t.id} showLabel />
+                </div>
+              )}
+            </article>
+          ))}
+          {!txns.length && (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No transactions yet.
+            </p>
+          )}
         </CardContent>
+        <div className="hidden md:block">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  {isAdmin && <TableHead className="w-8" />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {txns.map((t) => (
+                  <TableRow key={t.id}>
+                    <TableCell className="text-muted-foreground">{t.date}</TableCell>
+                    <TableCell>{t.name}</TableCell>
+                    <TableCell>
+                      <Badge variant={t.type === "deposit" ? "default" : "outline"}>
+                        {TYPE_LABEL[t.type] ?? t.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell
+                      className={
+                        "text-right tabular-nums " +
+                        (t.amount >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "")
+                      }
+                    >
+                      {fmtCurrency(t.amount, { sign: true })}
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        <DeleteTransactionButton id={t.id} />
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </div>
       </Card>
     </div>
   );

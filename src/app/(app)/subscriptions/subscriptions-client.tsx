@@ -255,88 +255,157 @@ export function SubscriptionsClient({
             </Select>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
-                <TableHead>Next payment</TableHead>
-                <TableHead>Account</TableHead>
-                <TableHead>Status</TableHead>
-                {isAdmin && <TableHead className="w-24" />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sorted.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>
-                    <div className="max-w-48 truncate font-medium">{s.name}</div>
-                    <div className="text-xs text-muted-foreground capitalize">
-                      {s.frequency}
-                      {s.detected ? " · auto-detected" : " · manual"}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {fmtCurrency(s.amount)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">{fmtDate(s.nextExpectedDate)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {s.dateVerified ? "verified" : "predicted"}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    <span className="block max-w-40 truncate">
-                      {s.accountId ? acctById[s.accountId]?.name ?? "—" : "—"}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        s.status === "active"
-                          ? "default"
-                          : s.status === "canceled"
-                            ? "secondary"
-                            : "outline"
-                      }
-                    >
-                      {s.status}
-                    </Badge>
-                  </TableCell>
-                  {isAdmin && (
+        <CardContent className="space-y-3 p-3 md:hidden">
+          {sorted.map((s) => (
+            <article key={s.id} className="space-y-3 rounded-lg border bg-background p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="break-words font-medium">{s.name}</div>
+                  <div className="text-xs text-muted-foreground capitalize">
+                    {s.frequency}
+                    {s.detected ? " · auto-detected" : " · manual"}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="font-medium tabular-nums">{fmtCurrency(s.amount)}</div>
+                  <Badge
+                    variant={
+                      s.status === "active"
+                        ? "default"
+                        : s.status === "canceled"
+                          ? "secondary"
+                          : "outline"
+                    }
+                  >
+                    {s.status}
+                  </Badge>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 border-t pt-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">Next payment</div>
+                  <div className="text-sm">{fmtDate(s.nextExpectedDate)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {s.dateVerified ? "verified" : "predicted"}
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">Account</div>
+                  <div className="truncate text-sm">
+                    {s.accountId ? acctById[s.accountId]?.name ?? "—" : "—"}
+                  </div>
+                </div>
+              </div>
+              {isAdmin && (
+                <div className="flex flex-wrap gap-2 border-t pt-3">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setEditing(s)}>
+                    <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
+                  </Button>
+                  {s.status === "active" && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => cancel(s)}>
+                      Cancel
+                    </Button>
+                  )}
+                  <Button type="button" variant="outline" size="sm" onClick={() => remove(s)}>
+                    <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                  </Button>
+                </div>
+              )}
+            </article>
+          ))}
+          {!sorted.length && (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No subscriptions yet.
+            </p>
+          )}
+        </CardContent>
+        <div className="hidden md:block">
+          <CardContent className="overflow-x-auto p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="text-right">Cost</TableHead>
+                  <TableHead>Next payment</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Status</TableHead>
+                  {isAdmin && <TableHead className="w-24" />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sorted.map((s) => (
+                  <TableRow key={s.id}>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setEditing(s)}
-                          className="text-muted-foreground hover:text-foreground"
-                          aria-label="Edit subscription"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        {s.status === "active" && (
-                          <button
-                            onClick={() => cancel(s)}
-                            className="px-1 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            cancel
-                          </button>
-                        )}
-                        <button
-                          onClick={() => remove(s)}
-                          className="text-muted-foreground hover:text-red-500"
-                          aria-label="Delete subscription"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                      <div className="max-w-48 truncate font-medium">{s.name}</div>
+                      <div className="text-xs text-muted-foreground capitalize">
+                        {s.frequency}
+                        {s.detected ? " · auto-detected" : " · manual"}
                       </div>
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
+                    <TableCell className="text-right tabular-nums">
+                      {fmtCurrency(s.amount)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">{fmtDate(s.nextExpectedDate)}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {s.dateVerified ? "verified" : "predicted"}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      <span className="block max-w-40 truncate">
+                        {s.accountId ? acctById[s.accountId]?.name ?? "—" : "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          s.status === "active"
+                            ? "default"
+                            : s.status === "canceled"
+                              ? "secondary"
+                              : "outline"
+                        }
+                      >
+                        {s.status}
+                      </Badge>
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditing(s)}
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label="Edit subscription"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          {s.status === "active" && (
+                            <button
+                              type="button"
+                              onClick={() => cancel(s)}
+                              className="px-1 text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              cancel
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => remove(s)}
+                            className="text-muted-foreground hover:text-red-500"
+                            aria-label="Delete subscription"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </div>
       </Card>
 
       <div className="space-y-4">

@@ -72,9 +72,9 @@ export default async function InvestmentsPage() {
     <div className="mx-auto max-w-6xl space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Investments</h1>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr_2fr]">
-        <Card>
-          <CardContent className="pt-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] lg:gap-4">
+        <Card className="py-0">
+          <CardContent className="p-4">
             <div className="text-sm text-muted-foreground">
               Contributed this year
             </div>
@@ -83,15 +83,15 @@ export default async function InvestmentsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-5">
+        <Card className="py-0">
+          <CardContent className="p-4">
             <div className="text-sm text-muted-foreground">Contributed all-time</div>
             <div className="mt-1 text-xl font-semibold tabular-nums">
               {fmtCurrency(allTimeContributions, { decimals: 0 })}
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="col-span-2 lg:col-span-1">
           <CardHeader>
             <CardTitle>Where your contributions went</CardTitle>
           </CardHeader>

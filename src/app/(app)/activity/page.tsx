@@ -144,10 +144,12 @@ export default async function ActivityPage({
         </div>
       </form>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
         <SummaryCard title="Money in" amount={summary.moneyIn} />
         <SummaryCard title="Money out" amount={summary.moneyOut} />
-        <SummaryCard title="Investment contributions" amount={summary.contributions} />
+        <div className="col-span-2 sm:col-span-1">
+          <SummaryCard title="Investment contributions" amount={summary.contributions} />
+        </div>
       </div>
 
       <Card>
@@ -250,8 +252,8 @@ export default async function ActivityPage({
 
 function SummaryCard({ title, amount }: { title: string; amount: number }) {
   return (
-    <Card>
-      <CardContent className="pt-5">
+    <Card className="py-0">
+      <CardContent className="p-4">
         <div className="text-sm text-muted-foreground">{title}</div>
         <div className="mt-1 text-xl font-semibold tabular-nums">{fmtCurrency(amount)}</div>
       </CardContent>

@@ -90,8 +90,10 @@ export default async function SettingsPage() {
             </div>
           ))}
           <p className="text-xs text-muted-foreground">
-            Manual entry works either way — Plaid is optional. See docs/SETUP.md;
-            never paste secrets into the repo or chat.
+            Manual entry works either way — Plaid is optional. To connect a bank,
+            set PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV, and TOKEN_ENCRYPTION_KEY
+            in Vercel, redeploy, then use Accounts → Connect bank. Never paste
+            secrets into the repo or chat.
           </p>
         </CardContent>
       </Card>
