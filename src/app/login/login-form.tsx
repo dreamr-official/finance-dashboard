@@ -20,11 +20,25 @@ export function LoginForm() {
     setLoading(true);
     setError(null);
     const fd = new FormData(e.currentTarget);
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email: String(fd.get("email")),
-      password: String(fd.get("password")),
-    });
+    let supabase;
+    try {
+      supabase = createClient();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Configuration error");
+      setLoading(false);
+      return;
+    }
+    let error;
+    try {
+      ({ error } = await supabase.auth.signInWithPassword({
+        email: String(fd.get("email")),
+        password: String(fd.get("password")),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in request failed");
+      setLoading(false);
+      return;
+    }
     if (error) {
       // If MFA is required, Supabase returns aal1 session — challenge next.
       const { data } = await supabase.auth.mfa.listFactors();
