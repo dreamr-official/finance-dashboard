@@ -1,3 +1,5 @@
+create extension if not exists pgcrypto;
+
 alter type provider_kind add value 'teller';
 
 -- Upserts a connection, encrypting the provider access token with the
