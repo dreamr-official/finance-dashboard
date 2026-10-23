@@ -16,14 +16,14 @@ export function isWithdrawal(t: Transaction) {
 
 export function computeNetWorth(accounts: Account[]): NetWorthSummary {
   const sum = (xs: Account[]) => xs.reduce((s, a) => s + a.currentBalance, 0);
-  const assets = sum(accounts.filter((a) => a.assetClass !== "liability"));
-  const liabilities = -sum(accounts.filter((a) => a.assetClass === "liability"));
+  const assets = sum(accounts.filter((a) => !isLiability(a)));
+  const liabilities = -sum(accounts.filter(isLiability));
   const cash = sum(accounts.filter((a) => a.assetClass === "cash"));
   const investments = sum(
     accounts.filter((a) => a.assetClass === "investment" || a.assetClass === "retirement"),
   );
   return {
-    netWorth: sum(accounts),
+    netWorth: assets - liabilities,
     assets,
     liabilities,
     cash,

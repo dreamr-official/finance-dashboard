@@ -258,6 +258,7 @@ export function HoldingRowActions({
         type="button"
         size="icon-sm"
         variant="ghost"
+        className="size-9"
         aria-label={`Edit ${holding.symbol}`}
         onClick={() => setOpen(true)}
       >
@@ -268,7 +269,7 @@ export function HoldingRowActions({
         size="icon-sm"
         variant="ghost"
         aria-label={`Delete ${holding.symbol}`}
-        className="text-muted-foreground hover:text-red-500"
+        className="size-9 text-muted-foreground hover:text-red-500"
         onClick={onDelete}
         disabled={deleting}
       >
@@ -285,7 +286,7 @@ export function AddHoldingButton({ accountId }: { accountId: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" variant="outline" className="h-9" onClick={() => setOpen(true)}>
         <Plus className="mr-1 h-4 w-4" /> Add holding
       </Button>
       {open && (

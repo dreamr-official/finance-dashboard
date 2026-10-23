@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { canManageHoldings } from "@/lib/manual-holdings";
 import type { AssetClass } from "@/lib/types";
+import { apiErrorResponse } from "@/lib/api-error";
 
 /** Loads an account and returns an error response unless it accepts manual holdings. */
 export async function loadManualInvestmentAccount(supabase: SupabaseClient, id: string) {
@@ -10,7 +11,7 @@ export async function loadManualInvestmentAccount(supabase: SupabaseClient, id: 
     .eq("id", id)
     .single();
   if (error && error.code !== "PGRST116") {
-    return { error: Response.json({ error: error.message }, { status: 500 }) };
+    return { error: apiErrorResponse(error) };
   }
   if (!account) {
     return { error: Response.json({ error: "Account not found" }, { status: 404 }) };
@@ -41,5 +42,5 @@ export function holdingWriteError(error: { code?: string; message: string }) {
       { status: 409 },
     );
   }
-  return Response.json({ error: error.message }, { status: 500 });
+  return apiErrorResponse(error);
 }

@@ -1,6 +1,7 @@
 import Papa from "papaparse";
 import { createHash } from "crypto";
-import { classifyType } from "./transactions";
+import { classifyType, normalizeTransactionAmount } from "./transactions";
+import { isoDate } from "./validation";
 
 const VALID_TYPES = new Set([
   "deposit",
@@ -54,37 +55,60 @@ export function parseCsv(csv: string) {
   let skipped = parsed.errors.length;
   const skippedReasons: string[] = [];
 
-  for (const fields of parsed.data) {
+  const headerRowIndex = parsed.data.findIndex(
+    (fields) => String(fields[0] ?? "").replace(/^\uFEFF/, "").trim().toLowerCase() === "date",
+  );
+  const headers = headerRowIndex >= 0
+    ? parsed.data[headerRowIndex].map((field) => String(field ?? "").trim().toLowerCase())
+    : null;
+  const balanceIndex = headers?.findIndex((header) =>
+    ["balance", "running balance"].includes(header),
+  ) ?? -1;
+  const typeIndex = headers?.indexOf("type") ?? -1;
+
+  for (const [rowIndex, fields] of parsed.data.entries()) {
     const cells = fields.map((field) => String(field ?? "").trim());
-    if (!cells.length || cells[0].toLowerCase() === "date") continue;
+    if (!cells.length || rowIndex === headerRowIndex) continue;
     const line = cells.join(",");
     const occurrenceIndex = occurrences.get(line) ?? 0;
     occurrences.set(line, occurrenceIndex + 1);
 
     const date = cells[0];
     const name = cells[1] ?? "";
-    let typeRaw: string | undefined;
-    let amountParts: string[];
-    if (cells.length === 3) {
-      amountParts = cells.slice(2);
-    } else if (cells.length === 4 && parseAmount(cells[3]) !== null) {
-      amountParts = cells.slice(2);
-    } else if (cells.length >= 4) {
-      amountParts = cells.slice(2, -1);
-      typeRaw = cells[cells.length - 1];
-    } else {
-      skipped += 1;
-      continue;
-    }
-    const amountRaw = amountParts.join("").trim();
+    const hasSplitThousands =
+      cells.length >= 4 &&
+      (!headers || balanceIndex < 0 || cells.length > headers.length) &&
+      !cells[2]?.includes(".") &&
+      /^\d{3}(?:\.\d+)?$/.test(cells[3]);
+    const amountRaw = hasSplitThousands
+      ? `${cells[2]}${cells[3]}`
+      : (cells[2] ?? "");
+    const lastCell = cells[cells.length - 1]?.toLowerCase();
+    const typeRaw =
+      typeIndex >= 0
+        ? cells[typeIndex + (hasSplitThousands && typeIndex > 2 ? 1 : 0)]
+        : lastCell && VALID_TYPES.has(lastCell)
+          ? lastCell
+          : undefined;
     if (!amountRaw) {
       skipped += 1;
       skippedReasons.push("missing amount");
       continue;
     }
     const amount = parseAmount(amountRaw);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !name || amount === null) {
+    if (!isoDate.safeParse(date).success) {
       skipped += 1;
+      skippedReasons.push("invalid date");
+      continue;
+    }
+    if (!name) {
+      skipped += 1;
+      skippedReasons.push("missing name");
+      continue;
+    }
+    if (amount === null) {
+      skipped += 1;
+      skippedReasons.push("invalid amount");
       continue;
     }
     const suppliedType = typeRaw?.toLowerCase();
@@ -97,7 +121,7 @@ export function parseCsv(csv: string) {
         .digest("hex")}`,
       date,
       name: name.slice(0, 200),
-      amount,
+      amount: normalizeTransactionAmount(amount, type),
       type,
     });
   }

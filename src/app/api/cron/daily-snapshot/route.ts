@@ -5,6 +5,7 @@ import { getSubscriptionsToRemind } from "@/lib/subscriptions";
 import { sendPushToAll } from "@/lib/push";
 import { fmtCurrency } from "@/lib/format";
 import { timingSafeEqual } from "crypto";
+import { appToday } from "@/lib/dates";
 
 /**
  * Vercel cron (daily): records today's balance per account into
@@ -27,28 +28,52 @@ export async function GET(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
   let syncWarning: string | undefined;
+  let syncFailed = false;
+  let failed: { connectionId: string; errorCode: string }[] = [];
   const encKey = process.env.TOKEN_ENCRYPTION_KEY;
   if (getProvider("plaid")?.configured && encKey) {
     try {
-      await syncAllConnections(supabase, encKey);
-    } catch (error) {
-      syncWarning = error instanceof Error ? error.message : "Plaid sync failed";
+      const results = await syncAllConnections(supabase, encKey);
+      failed = results.flatMap((result) =>
+        result.error
+          ? [{ connectionId: result.connection, errorCode: result.error }]
+          : [],
+      );
+      if (failed.length) {
+        syncWarning = failed
+          .map(({ connectionId, errorCode }) => `${connectionId}:${errorCode}`)
+          .join(", ");
+      }
+    } catch {
+      syncFailed = true;
+      syncWarning = "SYNC_FAILED";
     }
   }
   const { data: accounts, error } = await supabase
     .from("accounts")
-    .select("id, current_balance");
+    .select("id, current_balance, connection_id");
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  const today = new Date().toISOString().slice(0, 10);
-  const { error: upErr } = await supabase.from("balance_snapshots").upsert(
-    (accounts ?? []).map((a) => ({
-      account_id: a.id,
+  const today = appToday();
+  const failedConnectionIds = new Set(failed.map((result) => result.connectionId));
+  const snapshots = (accounts ?? [])
+    .filter(
+      (account) =>
+        (account.connection_id === null || !syncFailed) &&
+        !failedConnectionIds.has(account.connection_id),
+    )
+    .map((account) => ({
+      account_id: account.id,
       date: today,
-      balance: a.current_balance,
-    })),
-  );
-  if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
+      balance: account.current_balance,
+      source: "observed",
+    }));
+  if (snapshots.length) {
+    const { error: upErr } = await supabase
+      .from("balance_snapshots")
+      .upsert(snapshots);
+    if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
+  }
   try {
     const { data: subscriptions, error: subscriptionsError } = await supabase
       .from("subscriptions")
@@ -85,8 +110,9 @@ export async function GET(req: Request) {
     // Reminder delivery must not affect the daily snapshot.
   }
   return Response.json({
-    snapshotted: accounts?.length ?? 0,
+    snapshotted: snapshots.length,
     date: today,
     ...(syncWarning ? { syncWarning } : {}),
-  });
+    failed,
+  }, { status: failed.length || syncWarning ? 500 : 200 });
 }

@@ -1,5 +1,6 @@
 import type { ProviderTransaction } from "./integrations/types";
 import type { Holding } from "./types";
+import { appToday, shiftDate } from "./dates";
 
 export function mapPlaidInvestmentType(
   type?: string | null,
@@ -74,10 +75,8 @@ export function mapPlaidHoldingAssetType(type?: string | null): Holding["assetTy
 }
 
 export function isRecentIncomeDate(date: string, today: Date): boolean {
-  const todayDate = today.toISOString().slice(0, 10);
-  const cutoff = new Date(`${todayDate}T00:00:00.000Z`);
-  cutoff.setUTCDate(cutoff.getUTCDate() - 7);
-  return date >= cutoff.toISOString().slice(0, 10) && date <= todayDate;
+  const todayDate = appToday(today);
+  return date >= shiftDate(todayDate, -7) && date <= todayDate;
 }
 
 export function investmentNoticeForError(error: unknown): string | null {

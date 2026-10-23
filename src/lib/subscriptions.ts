@@ -1,4 +1,5 @@
 import type { Subscription } from "./types";
+import { appToday, shiftDate } from "./dates";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -7,14 +8,8 @@ type SubscriptionDateFields = Pick<
   "nextExpectedDate" | "frequency" | "status"
 >;
 
-function dateOnly(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
 function addDays(date: string, amount: number) {
-  const result = new Date(`${date}T00:00:00.000Z`);
-  result.setUTCDate(result.getUTCDate() + amount);
-  return dateOnly(result);
+  return shiftDate(date, amount);
 }
 
 function addMonthsFromAnchor(date: string, months: number, originalDay: number) {
@@ -23,7 +18,9 @@ function addMonthsFromAnchor(date: string, months: number, originalDay: number) 
   const year = anchor.getUTCFullYear() + Math.floor(monthIndex / 12);
   const month = monthIndex % 12;
   const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  return dateOnly(new Date(Date.UTC(year, month, Math.min(originalDay, lastDay))));
+  return new Date(Date.UTC(year, month, Math.min(originalDay, lastDay)))
+    .toISOString()
+    .slice(0, 10);
 }
 
 export function getSubscriptionNextPaymentDate(
@@ -31,7 +28,7 @@ export function getSubscriptionNextPaymentDate(
   today = new Date(),
 ) {
   const storedDate = subscription.nextExpectedDate;
-  const todayDate = dateOnly(today);
+  const todayDate = appToday(today);
   if (subscription.status === "canceled" || storedDate >= todayDate) return storedDate;
 
   if (subscription.frequency === "weekly") {
@@ -71,7 +68,7 @@ export function daysUntilSubscription(
   subscription: SubscriptionDateFields,
   today: Date,
 ) {
-  const todayDate = dateOnly(today);
+  const todayDate = appToday(today);
   return Math.round(
     (new Date(
       `${getSubscriptionNextPaymentDate(subscription, today)}T00:00:00.000Z`,
@@ -86,7 +83,7 @@ export function getUpcomingSubscriptions(
   today: Date,
   days = 14,
 ) {
-  const current = dateOnly(today);
+  const current = appToday(today);
   const lastDate = addDays(current, days);
   return subscriptions
     .filter((subscription) => {
@@ -105,6 +102,6 @@ export function getSubscriptionsToRemind(subscriptions: Subscription[], today: D
     (subscription) =>
       subscription.status === "active" &&
       getSubscriptionNextPaymentDate(subscription, today) ===
-        addDays(dateOnly(today), subscription.remindDaysBefore ?? 2),
+        addDays(appToday(today), subscription.remindDaysBefore ?? 2),
   );
 }

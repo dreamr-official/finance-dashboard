@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Fragment } from "react";
 import { getDataset } from "@/lib/data/provider";
+import { APP_TIMEZONE, appToday } from "@/lib/dates";
 import { getSessionUser } from "@/lib/auth";
 import { capSlices, groupHoldingsBySymbol, holdingsWithShare } from "@/lib/holdings";
 import { fmtCompact, fmtCurrency, fmtShare } from "@/lib/format";
@@ -40,6 +41,7 @@ import {
   HoldingsManager,
 } from "./holdings-manager";
 import { canManageHoldings } from "@/lib/manual-holdings";
+import { TRANSACTION_TYPE_LABELS, transactionCountLabel } from "@/lib/transactions";
 
 
 const TYPE_LABEL: Record<string, string> = {
@@ -69,7 +71,7 @@ export default async function AccountPage({
   const hist = snapshots
     .filter((s) => s.accountId === id)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const todayDate = new Date().toISOString().slice(0, 10);
+  const todayDate = appToday();
   if (hist.length > 0 && hist[hist.length - 1].date < todayDate) {
     hist.push({ accountId: id, date: todayDate, balance: account.currentBalance });
   }
@@ -77,7 +79,7 @@ export default async function AccountPage({
     .filter((t) => t.accountId === id)
     .sort(compareNewestFirst);
   const visibleTxns = allTxns.slice(0, limit);
-  const monthGroups = groupByMonth(visibleTxns, allTxns);
+  const monthGroups = groupByMonth(visibleTxns, allTxns, accounts, transactions);
   const acctHoldings = holdings.filter((h) => h.accountId === id);
   const holdingShares = holdingsWithShare(acctHoldings);
   const holdingTotal = holdingShares.reduce((sum, holding) => sum + holding.value, 0);
@@ -113,9 +115,11 @@ export default async function AccountPage({
           {fmtCurrency(account.currentBalance)}
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          {account.lastSyncedAt
-            ? `Last synced ${new Date(account.lastSyncedAt).toLocaleString()}`
-            : "Never synced"}
+          {account.isManual
+            ? "Manual"
+            : account.lastSyncedAt
+              ? `Last synced ${new Date(account.lastSyncedAt).toLocaleString("en-US", { timeZone: APP_TIMEZONE })}`
+              : "Never synced"}
           {account.isManual ? " · manual account" : " · balance comes from bank sync"}
         </div>
         {!account.isManual &&
@@ -290,14 +294,15 @@ export default async function AccountPage({
             <div>
               <CardTitle>Transactions</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Showing {visibleTxns.length.toLocaleString()} of {allTxns.length.toLocaleString()}
+                Showing {visibleTxns.length.toLocaleString()} of {allTxns.length.toLocaleString()}{" "}
+                {allTxns.length === 1 ? "transaction" : "transactions"}
               </p>
             </div>
             <Link
               href={`/activity?account=${encodeURIComponent(account.id)}`}
               className={buttonVariants({ variant: "outline" })}
             >
-              View all {allTxns.length.toLocaleString()} in Activity
+              View all {transactionCountLabel(allTxns.length)} in Activity
             </Link>
           </div>
         </CardHeader>
@@ -308,7 +313,7 @@ export default async function AccountPage({
                 <div className="flex min-w-0 items-baseline gap-2">
                   <h2 className="font-medium">{group.label}</h2>
                   <span className="text-xs text-muted-foreground">
-                    {group.count.toLocaleString()} transactions
+                    {transactionCountLabel(group.count)}
                   </span>
                 </div>
                 <p className="text-xs tabular-nums text-muted-foreground">
@@ -334,7 +339,7 @@ export default async function AccountPage({
                             />
                           ) : (
                             <Badge variant={t.type === "deposit" ? "default" : "outline"}>
-                              {TYPE_LABEL[t.type] ?? t.type}
+                              {TYPE_LABEL[t.type] ?? TRANSACTION_TYPE_LABELS[t.type]}
                             </Badge>
                           )}
                         </div>
@@ -387,7 +392,7 @@ export default async function AccountPage({
                           <div className="flex items-baseline gap-2">
                             <span className="font-medium">{group.label}</span>
                             <span className="text-xs text-muted-foreground">
-                              {group.count.toLocaleString()} transactions
+                              {transactionCountLabel(group.count)}
                             </span>
                           </div>
                           <span className="text-xs tabular-nums text-muted-foreground">
@@ -412,7 +417,7 @@ export default async function AccountPage({
                             />
                           ) : (
                             <Badge variant={t.type === "deposit" ? "default" : "outline"}>
-                              {TYPE_LABEL[t.type] ?? t.type}
+                              {TYPE_LABEL[t.type] ?? TRANSACTION_TYPE_LABELS[t.type]}
                             </Badge>
                           )}
                         </TableCell>

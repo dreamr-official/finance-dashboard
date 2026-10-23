@@ -7,6 +7,7 @@ import { isRecentIncomeDate } from "@/lib/investments";
 import { rebuildAccountHistory } from "@/lib/backfill";
 import { assetClassForType } from "@/lib/account-types";
 import { chunk } from "@/lib/transaction-list";
+import { appToday } from "@/lib/dates";
 
 export interface SyncConnection {
   id: string;
@@ -59,7 +60,7 @@ export async function syncConnection(
 
     const sync = await provider.sync(token, conn.sync_cursor ?? undefined);
     const now = new Date().toISOString();
-    const today = now.slice(0, 10);
+    const today = appToday(new Date(now));
     const accountIdByProviderId = new Map<string, string>();
     const accountNameByProviderId = new Map<string, string>();
     const newIncomeRows: {
@@ -119,7 +120,12 @@ export async function syncConnection(
 
       const { error: snapshotError } = await supabase
         .from("balance_snapshots")
-        .upsert({ account_id: accountId, date: today, balance: pa.balance });
+        .upsert({
+          account_id: accountId,
+          date: today,
+          balance: pa.balance,
+          source: "observed",
+        });
       if (snapshotError) throw new Error(snapshotError.message);
     }
 
@@ -345,7 +351,7 @@ export async function syncAllConnections(supabase: SupabaseClient, encKey: strin
     } catch (error) {
       results.push({
         connection: conn.id,
-        error: error instanceof Error ? error.message : "Sync failed",
+        error: plaidErrorCode(error) ?? "SYNC_FAILED",
       });
     }
   }

@@ -136,8 +136,8 @@ describe("transaction list pagination", () => {
       {
         month: "2026-02",
         label: "February 2026",
-        moneyIn: 30,
-        moneyOut: 8,
+        moneyIn: 80,
+        moneyOut: 20,
         count: 4,
         transactions: [visible[0]],
       },

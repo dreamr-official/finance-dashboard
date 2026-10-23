@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Account, AccountType, Transaction } from "@/lib/types";
+import type { Account, AccountType, Transaction, TransactionType } from "@/lib/types";
+import { appToday } from "@/lib/dates";
 import { ACCOUNT_TYPE_OPTIONS } from "@/lib/account-types";
+import { TRANSACTION_TYPE_LABELS } from "@/lib/transactions";
+import { getResponseError } from "@/lib/client-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +31,7 @@ export function AddPastBalanceButton({ accountId }: { accountId: string }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = appToday();
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,8 +48,7 @@ export function AddPastBalanceButton({ accountId }: { accountId: string }) {
     });
     setLoading(false);
     if (!response.ok) {
-      const result = await response.json();
-      setError(typeof result.error === "string" ? result.error : "Could not save balance.");
+      setError(await getResponseError(response, "Could not save balance."));
       return;
     }
     setOpen(false);
@@ -55,7 +57,7 @@ export function AddPastBalanceButton({ accountId }: { accountId: string }) {
 
   return (
     <>
-      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" variant="outline" className="h-9" onClick={() => setOpen(true)}>
         Add past balance
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -103,19 +105,19 @@ export function RebuildHistoryButton({ accountId }: { accountId: string }) {
     const response = await fetch(`/api/accounts/${accountId}/rebuild-history`, {
       method: "POST",
     });
-    const result = await response.json();
     setLoading(false);
     if (!response.ok) {
-      setMessage(typeof result.error === "string" ? result.error : "Could not rebuild history.");
+      setMessage(await getResponseError(response, "Could not rebuild history."));
       return;
     }
+    const result = await response.json().catch(() => null);
     setMessage(`Added ${result.reconstructed} reconstructed balance days.`);
     router.refresh();
   }
 
   return (
     <div className="flex flex-col items-start gap-1">
-      <Button type="button" size="sm" variant="outline" onClick={rebuild} disabled={loading}>
+      <Button type="button" size="sm" variant="outline" className="h-9" onClick={rebuild} disabled={loading}>
         <History className="mr-1 h-4 w-4" />
         {loading ? "Rebuilding…" : "Rebuild history from transactions"}
       </Button>
@@ -124,20 +126,10 @@ export function RebuildHistoryButton({ accountId }: { accountId: string }) {
   );
 }
 
-const TXN_TYPES = [
-  { value: "deposit", label: "Deposit / contribution" },
-  { value: "withdrawal", label: "Withdrawal" },
-  { value: "transfer_in", label: "Transfer in" },
-  { value: "transfer_out", label: "Transfer out" },
-  { value: "buy", label: "Buy" },
-  { value: "sell", label: "Sell" },
-  { value: "dividend", label: "Dividend" },
-  { value: "interest", label: "Interest" },
-  { value: "fee", label: "Fee" },
-  { value: "expense", label: "Expense" },
-  { value: "income", label: "Income" },
-  { value: "other", label: "Other" },
-];
+const TXN_TYPES = Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({
+  value: value as TransactionType,
+  label,
+}));
 
 export function TransactionTypeSelect({
   transactionId,
@@ -160,6 +152,7 @@ export function TransactionTypeSelect({
     transactionTaxYear ?? Number(transactionDate.slice(0, 4)),
   );
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const dateYear = Number(transactionDate.slice(0, 4));
   const monthDay = transactionDate.slice(5);
   const canSetTaxYear =
@@ -171,24 +164,27 @@ export function TransactionTypeSelect({
   async function updateType(nextType: string | null) {
     if (!nextType || nextType === value) return;
     setSaving(true);
+    setError(null);
     const response = await fetch(`/api/transactions/${transactionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: nextType }),
     });
     setSaving(false);
-    if (response.ok) {
-      setValue(nextType as Transaction["type"]);
-      router.refresh();
+    if (!response.ok) {
+      setError(await getResponseError(response, "Could not update transaction type."));
+      return;
     }
+    setValue(nextType as Transaction["type"]);
+    router.refresh();
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select value={value} onValueChange={updateType}>
+      <Select items={TXN_TYPES} value={value} onValueChange={updateType}>
         <SelectTrigger
           aria-label={`Edit type for ${transactionName}`}
-          className="h-7 w-[132px] text-xs"
+          className="h-9 w-[132px] text-xs"
           disabled={saving}
         >
           <SelectValue />
@@ -216,20 +212,23 @@ export function TransactionTypeSelect({
                 body: JSON.stringify({ taxYear: year }),
               });
               setSaving(false);
-              if (response.ok) {
-                setTaxYear(year);
-                router.refresh();
+              if (!response.ok) {
+                setError(await getResponseError(response, "Could not update tax year."));
+                return;
               }
+              setTaxYear(year);
+              router.refresh();
             }}
           >
-            <SelectTrigger aria-label="Counts toward tax year" className="h-7 w-[100px] text-xs">
+            <SelectTrigger aria-label="Counts toward tax year" className="h-9 w-[100px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={String(dateYear)}>{dateYear}</SelectItem>
               <SelectItem value={String(dateYear - 1)}>{dateYear - 1}</SelectItem>
             </SelectContent>
-          </Select>
+      </Select>
+      {error && <p role="alert" className="mt-1 text-xs text-destructive">{error}</p>}
         </div>
       )}
     </div>
@@ -261,8 +260,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
     });
     setLoading(false);
     if (!res.ok) {
-      const d = await res.json();
-      setError(typeof d.error === "string" ? d.error : "Failed");
+      setError(await getResponseError(res, "Could not add transaction."));
       return;
     }
     setOpen(false);
@@ -271,7 +269,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
 
   return (
     <>
-      <Button type="button" size="sm" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" className="h-9" onClick={() => setOpen(true)}>
         <Plus className="mr-1 h-4 w-4" /> Add transaction
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -293,6 +291,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
               <div>
                 <Label>Type</Label>
                 <Select
+                  items={TXN_TYPES}
                   value={transactionType}
                   onValueChange={(value) => value && setTransactionType(value)}
                 >
@@ -357,7 +356,7 @@ export function EditAccountButton({ account }: { account: Account }) {
     });
     setLoading(false);
     if (!res.ok) {
-      setError("Failed to save");
+      setError(await getResponseError(res, "Could not save account."));
       return;
     }
     setOpen(false);
@@ -367,19 +366,24 @@ export function EditAccountButton({ account }: { account: Account }) {
   async function onDelete() {
     if (!confirm(`Delete ${account.name} and all its transactions?`)) return;
     const res = await fetch(`/api/accounts/${account.id}`, { method: "DELETE" });
-    if (res.ok) router.push("/accounts");
+    if (!res.ok) {
+      setError(await getResponseError(res, "Could not delete account."));
+      return;
+    }
+    router.push("/accounts");
   }
 
   return (
     <>
-      <div className="flex gap-1">
-        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <div className="flex flex-wrap gap-1">
+        <Button type="button" size="sm" variant="outline" className="h-9" onClick={() => setOpen(true)}>
           <Pencil className="mr-1 h-4 w-4" /> Edit
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onDelete}>
+        <Button type="button" size="sm" variant="outline" className="h-9" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
@@ -393,6 +397,7 @@ export function EditAccountButton({ account }: { account: Account }) {
             <div>
               <Label>Type</Label>
               <Select
+                items={ACCOUNT_TYPE_OPTIONS}
                 value={accountType}
                 onValueChange={(value) => value && setAccountType(value as AccountType)}
               >
@@ -446,24 +451,33 @@ export function DeleteTransactionButton({
   showLabel?: boolean;
 }) {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
   async function onDelete(e: React.MouseEvent) {
     e.preventDefault();
-    await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+    setError(null);
+    const response = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      setError(await getResponseError(response, "Could not delete transaction."));
+      return;
+    }
     router.refresh();
   }
   return (
-    <button
-      type="button"
-      onClick={onDelete}
-      className={
-        showLabel
-          ? "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:text-red-500"
-          : "text-muted-foreground hover:text-red-500"
-      }
-      aria-label="Delete transaction"
-    >
-      <Trash2 className="h-3.5 w-3.5" />
-      {showLabel && <span>Delete</span>}
-    </button>
+    <span className="inline-flex flex-col items-start gap-1">
+      <button
+        type="button"
+        onClick={onDelete}
+        className={
+          showLabel
+            ? "inline-flex min-h-9 items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:text-red-500"
+            : "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:text-red-500"
+        }
+        aria-label="Delete transaction"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        {showLabel && <span>Delete</span>}
+      </button>
+      {error && <span role="alert" className="text-xs text-destructive">{error}</span>}
+    </span>
   );
 }

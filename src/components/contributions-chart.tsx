@@ -9,29 +9,36 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fmtChartTick, fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
+import { fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
+import {
+  chartSpanDays,
+  chartTicks,
+  chartTimeDomain,
+  formatChartTime,
+  withChartTime,
+} from "@/lib/chart-data";
 
 export function ContributionsChart({
   data,
 }: {
   data: { date: string; value: number }[];
 }) {
-  const firstDate = data[0]?.date;
-  const lastDate = data[data.length - 1]?.date;
-  const spanDays =
-    firstDate && lastDate
-      ? (Date.parse(`${lastDate}T00:00:00.000Z`) -
-          Date.parse(`${firstDate}T00:00:00.000Z`)) /
-        86400000
-      : 0;
+  const chartData = withChartTime(data);
+  const spanDays = chartSpanDays(chartData);
+  const ticks = chartTicks(chartData);
+  const dateByTime = new Map(chartData.map((point) => [point.t, point.date]));
   return (
     <div className="h-64 w-full">
       <ResponsiveContainer>
-        <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+        <LineChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
           <XAxis
-            dataKey="date"
-            tickFormatter={(value) => fmtChartTick(String(value), spanDays)}
+            dataKey="t"
+            type="number"
+            scale="time"
+            domain={chartTimeDomain(chartData)}
+            ticks={ticks}
+            tickFormatter={(value) => formatChartTime(Number(value), spanDays)}
             tick={{ fontSize: 11 }}
             minTickGap={48}
             axisLine={false}
@@ -46,7 +53,12 @@ export function ContributionsChart({
           />
           <Tooltip
             formatter={(value) => [fmtCurrency(Number(value)), "Net contributions"]}
-            labelFormatter={(value) => fmtDate(String(value))}
+            labelFormatter={(value) =>
+              fmtDate(
+                dateByTime.get(Number(value)) ??
+                  new Date(Number(value)).toISOString().slice(0, 10),
+              )
+            }
             contentStyle={{
               borderRadius: 8,
               border: "1px solid var(--border)",
@@ -55,11 +67,13 @@ export function ContributionsChart({
             }}
           />
           <Line
-            type="monotone"
+            type="stepAfter"
             dataKey="value"
             stroke="var(--color-chart-1, #10b981)"
             strokeWidth={2}
-            dot={false}
+            dot={chartData.length === 1}
+            activeDot
+            isAnimationActive={false}
           />
         </LineChart>
       </ResponsiveContainer>

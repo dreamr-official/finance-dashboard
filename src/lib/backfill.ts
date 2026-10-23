@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAll } from "./data/fetch-all";
+import { appToday, shiftDate } from "./dates";
 
 export interface HistoryTransaction {
   date: string;
@@ -7,19 +8,18 @@ export interface HistoryTransaction {
   pending: boolean;
 }
 
-function shiftDate(date: string, days: number) {
-  const value = new Date(`${date}T00:00:00.000Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
+export interface HistoryAnchor {
+  date: string;
+  balance: number;
 }
 
 export function reconstructBalances(
   currentBalance: number,
   transactions: HistoryTransaction[],
-  today: Date,
+  today: Date | string = appToday(),
+  anchors: HistoryAnchor[] = [],
 ): { date: string; balance: number }[] {
-  const todayDate = today.toISOString().slice(0, 10);
-  const yesterday = shiftDate(todayDate, -1);
+  const todayDate = typeof today === "string" ? today : appToday(today);
   const eligible = transactions.filter(
     (transaction) => !transaction.pending && transaction.date <= todayDate,
   );
@@ -28,9 +28,11 @@ export function reconstructBalances(
     (date, transaction) => (transaction.date < date ? transaction.date : date),
     eligible[0].date,
   );
-  const start = earliest > shiftDate(yesterday, -729)
-    ? earliest
-    : shiftDate(yesterday, -729);
+  const preTransaction = shiftDate(earliest, -1);
+  const windowStart = shiftDate(todayDate, -730);
+  const start = preTransaction > windowStart
+    ? preTransaction
+    : windowStart;
   const byDate = new Map<string, number>();
   for (const transaction of eligible) {
     byDate.set(
@@ -38,14 +40,17 @@ export function reconstructBalances(
       (byDate.get(transaction.date) ?? 0) + transaction.amount,
     );
   }
+  const anchorByDate = new Map(anchors.map((anchor) => [anchor.date, anchor.balance]));
 
   let balance = currentBalance;
-  let date = todayDate;
+  let date = shiftDate(todayDate, -1);
   const reconstructed: { date: string; balance: number }[] = [];
-  while (date > start) {
-    balance -= byDate.get(date) ?? 0;
+  while (date >= start) {
+    balance -= byDate.get(shiftDate(date, 1)) ?? 0;
+    const anchor = anchorByDate.get(date);
+    if (anchor !== undefined) balance = anchor;
+    else reconstructed.push({ date, balance });
     date = shiftDate(date, -1);
-    if (date <= yesterday && date >= start) reconstructed.push({ date, balance });
   }
   return reconstructed.reverse();
 }
@@ -53,11 +58,11 @@ export function reconstructBalances(
 export async function rebuildAccountHistory(
   supabase: SupabaseClient,
   accountId: string,
-  today = new Date(),
+  today: Date | string = appToday(),
 ): Promise<{ eligible: boolean; reconstructed: number } | null> {
   const { data: account, error: accountError } = await supabase
     .from("accounts")
-    .select("id,asset_class,current_balance")
+    .select("id,asset_class,current_balance,is_manual")
     .eq("id", accountId)
     .maybeSingle();
   if (accountError) throw new Error(accountError.message);
@@ -66,14 +71,8 @@ export async function rebuildAccountHistory(
     return { eligible: false, reconstructed: 0 };
   }
 
-  const { error: deleteError } = await supabase
-    .from("balance_snapshots")
-    .delete()
-    .eq("account_id", accountId)
-    .eq("source", "reconstructed");
-  if (deleteError) throw new Error(deleteError.message);
-
-  const [transactions, recorded] = await Promise.all([
+  const todayDate = typeof today === "string" ? today : appToday(today);
+  const [transactions, snapshots] = await Promise.all([
     fetchAll((from, to) =>
       supabase
         .from("transactions")
@@ -86,14 +85,24 @@ export async function rebuildAccountHistory(
     fetchAll((from, to) =>
       supabase
         .from("balance_snapshots")
-        .select("date")
+        .select("date,balance,source")
         .eq("account_id", accountId)
-        .eq("source", "recorded")
         .order("date")
         .range(from, to),
     ),
   ]);
-  const recordedDates = new Set(recorded.map((snapshot) => snapshot.date));
+  const anchors = snapshots
+    .filter(
+      (snapshot) =>
+        snapshot.date < todayDate &&
+        (snapshot.source === "manual" ||
+          snapshot.source === "recorded" ||
+          (snapshot.source === "observed" && !account.is_manual)),
+    )
+    .map((snapshot) => ({
+      date: snapshot.date,
+      balance: Number(snapshot.balance),
+    }));
   const rows = reconstructBalances(
     Number(account.current_balance),
     transactions.map((transaction) => ({
@@ -101,19 +110,26 @@ export async function rebuildAccountHistory(
       amount: Number(transaction.amount),
       pending: transaction.pending,
     })),
-    today,
+    todayDate,
+    anchors,
   )
-    .filter((snapshot) => !recordedDates.has(snapshot.date))
     .map((snapshot) => ({
       account_id: accountId,
       date: snapshot.date,
       balance: snapshot.balance,
       source: "reconstructed",
     }));
+  const { error: deleteError } = await supabase
+    .from("balance_snapshots")
+    .delete()
+    .eq("account_id", accountId)
+    .eq("source", "reconstructed")
+    .lt("date", todayDate);
+  if (deleteError) throw new Error(deleteError.message);
   if (rows.length) {
     const { error } = await supabase
       .from("balance_snapshots")
-      .upsert(rows, { onConflict: "account_id,date", ignoreDuplicates: true });
+      .upsert(rows, { onConflict: "account_id,date" });
     if (error) throw new Error(error.message);
   }
   return { eligible: true, reconstructed: rows.length };

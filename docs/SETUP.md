@@ -28,6 +28,14 @@ secrets ever go in the repo, chat, or git.
 6. Copy **Project URL** and **anon key** into Vercel env vars, plus the
    **service-role key** for the cron job (server-only).
 
+## App timezone
+
+`NEXT_PUBLIC_APP_TIMEZONE` controls the calendar date used for balances,
+history, and reminders on both the server and client. It is optional and
+defaults to `America/Los_Angeles`; set it to an IANA timezone if you want a
+different local day boundary. If you also set the legacy server-side
+`APP_TIMEZONE`, keep it aligned with `NEXT_PUBLIC_APP_TIMEZONE`.
+
 ## 2. Entering data
 
 Manual entry is the primary workflow; Plaid linking is optional and read-only.
@@ -86,7 +94,7 @@ iOS 16.4 or later.
    you want preview deploys — but note preview deployments share the same
    auth gate, which is what you want).
 3. `vercel.json` registers a daily cron (`/api/cron/daily-snapshot`,
-   08:00 UTC) for balance snapshots. Set `CRON_SECRET` to any random string.
+   06:00 UTC) for balance snapshots. Set `CRON_SECRET` to any random string.
 
 ## Security notes
 

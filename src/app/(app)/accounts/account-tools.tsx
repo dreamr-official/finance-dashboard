@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Account } from "@/lib/types";
+import type { Account, AccountType } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,24 +21,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Upload } from "lucide-react";
-
-const TYPES = [
-  "checking",
-  "savings",
-  "cash",
-  "brokerage",
-  "roth_ira",
-  "traditional_ira",
-  "401k",
-  "credit_card",
-  "loan",
-  "other",
-] as const;
+import { ACCOUNT_TYPE_OPTIONS } from "@/lib/account-types";
+import { getResponseError } from "@/lib/client-api";
 
 export function AddAccountDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [accountType, setAccountType] = useState<(typeof TYPES)[number]>("checking");
+  const [accountType, setAccountType] = useState<AccountType>("checking");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -61,7 +50,7 @@ export function AddAccountDialog() {
     });
     setLoading(false);
     if (!res.ok) {
-      setError((await res.json()).error ?? "Failed");
+      setError(await getResponseError(res, "Could not add account."));
       return;
     }
     setOpen(false);
@@ -70,7 +59,7 @@ export function AddAccountDialog() {
 
   return (
     <>
-      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" variant="outline" className="h-9" onClick={() => setOpen(true)}>
         <Plus className="mr-1 h-4 w-4" /> Add account
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -99,14 +88,18 @@ export function AddAccountDialog() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Type</Label>
-                <Select value={accountType} onValueChange={(value) => value && setAccountType(value as (typeof TYPES)[number])}>
+                <Select
+                  items={ACCOUNT_TYPE_OPTIONS}
+                  value={accountType}
+                  onValueChange={(value) => value && setAccountType(value as AccountType)}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {TYPES.map((t) => (
-                      <SelectItem key={t} value={t} className="capitalize">
-                        {t.replace("_", " ")}
+                    {ACCOUNT_TYPE_OPTIONS.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -166,18 +159,18 @@ export function ImportCsvDialog({ account }: { account: Account }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ csv }),
     });
-    const data = await res.json();
     setLoading(false);
     if (!res.ok) {
-      setResult(`Error: ${typeof data.error === "string" ? data.error : "failed"}`);
+      setResult(`Error: ${await getResponseError(res, "Could not import transactions.")}`);
       return;
     }
+    const data = await res.json().catch(() => null);
     setResult(
-      `Imported ${data.imported} transactions; skipped ${data.skipped} invalid rows${
+      `Inserted ${data.inserted}, updated ${data.updated}, unchanged ${data.unchanged}; skipped ${data.skipped} rows${
         data.skippedReasons?.length
           ? ` (${[...new Set(data.skippedReasons)].join(", ")})`
           : ""
-      } (re-importing is safe).`,
+      }. Re-importing is safe.`,
     );
     router.refresh();
   }
@@ -191,7 +184,7 @@ export function ImportCsvDialog({ account }: { account: Account }) {
           e.stopPropagation();
           setOpen(true);
         }}
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        className="inline-flex min-h-9 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground"
       >
         <Upload className="h-3 w-3" /> CSV
       </button>

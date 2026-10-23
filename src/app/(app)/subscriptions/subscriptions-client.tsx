@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Account, Subscription } from "@/lib/types";
+import { appToday } from "@/lib/dates";
+import type { Account, BillingFrequency, Subscription } from "@/lib/types";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 import {
   getSubscriptionNextPaymentDate,
@@ -38,10 +39,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2 } from "lucide-react";
+import { getResponseError } from "@/lib/client-api";
 
 type SortKey = "date" | "cost" | "name";
 
-const FREQUENCIES = ["weekly", "monthly", "quarterly", "annual"] as const;
+const FREQUENCIES: { value: BillingFrequency; label: string }[] = [
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "annual", label: "Annual" },
+];
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "date", label: "Renewal date" },
+  { value: "cost", label: "Cost" },
+  { value: "name", label: "Name" },
+];
 
 function SubscriptionDialog({
   accounts,
@@ -76,24 +89,29 @@ function SubscriptionDialog({
           ? 2
           : Number(fd.get("remind_days_before")),
     };
-    const res = sub
-      ? await fetch(`/api/subscriptions/${sub.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
-      : await fetch("/api/subscriptions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-    setLoading(false);
-    if (!res.ok) {
-      setError(sub ? "Failed to save" : "Failed to add (Supabase required)");
-      return;
+    try {
+      const res = sub
+        ? await fetch(`/api/subscriptions/${sub.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+        : await fetch("/api/subscriptions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+      if (!res.ok) {
+        setError(await getResponseError(res, "Could not save subscription."));
+        return;
+      }
+      setOpen(false);
+      router.refresh();
+    } catch {
+      setError("Could not reach the server. Try again.");
+    } finally {
+      setLoading(false);
     }
-    setOpen(false);
-    router.refresh();
   }
 
   return (
@@ -125,6 +143,7 @@ function SubscriptionDialog({
             <div>
               <Label>Frequency</Label>
               <Select
+                items={FREQUENCIES}
                 value={frequency}
                 onValueChange={(value) => value && setFrequency(value)}
               >
@@ -132,9 +151,9 @@ function SubscriptionDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {FREQUENCIES.map((f) => (
-                    <SelectItem key={f} value={f} className="capitalize">
-                      {f}
+                  {FREQUENCIES.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -147,7 +166,7 @@ function SubscriptionDialog({
               id="next_expected_date"
               name="next_expected_date"
               type="date"
-              defaultValue={sub?.nextExpectedDate}
+              defaultValue={sub?.nextExpectedDate ?? appToday()}
               required
             />
           </div>
@@ -210,25 +229,44 @@ export function SubscriptionsClient({
   const [sort, setSort] = useState<SortKey>("date");
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<Subscription | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const router = useRouter();
   const acctById = Object.fromEntries(accounts.map((a) => [a.id, a]));
 
   async function cancel(sub: Subscription) {
-    await fetch(`/api/subscriptions/${sub.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "canceled" }),
-    });
-    router.refresh();
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/subscriptions/${sub.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "canceled" }),
+      });
+      if (!response.ok) {
+        setActionError(await getResponseError(response, "Could not cancel subscription."));
+        return;
+      }
+      router.refresh();
+    } catch {
+      setActionError("Could not reach the server. Try again.");
+    }
   }
 
   async function remove(sub: Subscription) {
     if (!confirm(`Delete ${sub.name}?`)) return;
-    await fetch(`/api/subscriptions/${sub.id}`, { method: "DELETE" });
-    router.refresh();
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/subscriptions/${sub.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        setActionError(await getResponseError(response, "Could not delete subscription."));
+        return;
+      }
+      router.refresh();
+    } catch {
+      setActionError("Could not reach the server. Try again.");
+    }
   }
 
-  const today = useMemo(() => new Date(), []);
+  const today = useMemo(() => new Date(`${appToday()}T12:00:00.000Z`), []);
   const sorted = useMemo(
     () =>
       [...subscriptions].sort((a, b) => {
@@ -256,22 +294,29 @@ export function SubscriptionsClient({
           </CardTitle>
           <div className="flex items-center gap-2">
             {isAdmin && (
-              <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
+              <Button type="button" size="sm" className="h-9" onClick={() => setAddOpen(true)}>
                 <Plus className="mr-1 h-4 w-4" /> Add
               </Button>
             )}
-            <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+            <Select items={SORT_OPTIONS} value={sort} onValueChange={(v) => setSort(v as SortKey)}>
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="Sort" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="date">Renewal date</SelectItem>
-                <SelectItem value="cost">Cost</SelectItem>
-                <SelectItem value="name">Name</SelectItem>
+                {SORT_OPTIONS.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </CardHeader>
+        {actionError && (
+          <p role="alert" className="px-4 text-sm text-destructive">
+            {actionError}
+          </p>
+        )}
         <CardContent className="space-y-3 p-3 md:hidden">
           {sorted.map((s) => (
             <article key={s.id} className="space-y-3 rounded-lg border bg-background p-3">
@@ -294,17 +339,23 @@ export function SubscriptionsClient({
                           : "outline"
                     }
                   >
-                    {s.status}
+                    {s.status === "canceled" ? "Canceled" : s.status}
                   </Badge>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3 border-t pt-3">
                 <div>
                   <div className="text-xs text-muted-foreground">Next payment</div>
-                  <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s, today))}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {isSubscriptionDatePredicted(s, today) ? "predicted" : "verified"}
-                  </div>
+                  {s.status === "canceled" ? (
+                    <div className="text-sm text-muted-foreground">Canceled</div>
+                  ) : (
+                    <>
+                      <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s, today))}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {isSubscriptionDatePredicted(s, today) ? "predicted" : "verified"}
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs text-muted-foreground">Account</div>
@@ -315,15 +366,15 @@ export function SubscriptionsClient({
               </div>
               {isAdmin && (
                 <div className="flex flex-wrap gap-2 border-t pt-3">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setEditing(s)}>
+                  <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => setEditing(s)}>
                     <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
                   </Button>
                   {s.status === "active" && (
-                    <Button type="button" variant="outline" size="sm" onClick={() => cancel(s)}>
+                    <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => cancel(s)}>
                       Cancel
                     </Button>
                   )}
-                  <Button type="button" variant="outline" size="sm" onClick={() => remove(s)}>
+                  <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => remove(s)}>
                     <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
                   </Button>
                 </div>
@@ -344,7 +395,7 @@ export function SubscriptionsClient({
                   <TableHead>Name</TableHead>
                   <TableHead className="text-right">Cost</TableHead>
                   <TableHead>Next payment</TableHead>
-                  <TableHead>Account</TableHead>
+                  <TableHead className="hidden xl:table-cell">Account</TableHead>
                   <TableHead>Status</TableHead>
                   {isAdmin && <TableHead className="w-24" />}
                 </TableRow>
@@ -363,12 +414,18 @@ export function SubscriptionsClient({
                       {fmtCurrency(s.amount)}
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s, today))}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {isSubscriptionDatePredicted(s, today) ? "predicted" : "verified"}
-                      </div>
+                      {s.status === "canceled" ? (
+                        <div className="text-sm text-muted-foreground">Canceled</div>
+                      ) : (
+                        <>
+                          <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s, today))}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {isSubscriptionDatePredicted(s, today) ? "predicted" : "verified"}
+                          </div>
+                        </>
+                      )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="hidden text-sm text-muted-foreground xl:table-cell">
                       <span className="block max-w-40 truncate">
                         {s.accountId ? acctById[s.accountId]?.name ?? "—" : "—"}
                       </span>
@@ -383,7 +440,7 @@ export function SubscriptionsClient({
                               : "outline"
                         }
                       >
-                        {s.status}
+                    {s.status === "canceled" ? "Canceled" : s.status}
                       </Badge>
                     </TableCell>
                     {isAdmin && (
@@ -392,7 +449,7 @@ export function SubscriptionsClient({
                           <button
                             type="button"
                             onClick={() => setEditing(s)}
-                            className="text-muted-foreground hover:text-foreground"
+                            className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
                             aria-label="Edit subscription"
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -401,7 +458,7 @@ export function SubscriptionsClient({
                             <button
                               type="button"
                               onClick={() => cancel(s)}
-                              className="px-1 text-xs text-muted-foreground hover:text-foreground"
+                              className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground"
                             >
                               cancel
                             </button>
@@ -409,7 +466,7 @@ export function SubscriptionsClient({
                           <button
                             type="button"
                             onClick={() => remove(s)}
-                            className="text-muted-foreground hover:text-red-500"
+                            className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:text-red-500"
                             aria-label="Delete subscription"
                           >
                             <Trash2 className="h-3.5 w-3.5" />

@@ -12,6 +12,7 @@ import {
   investmentNoticeForError,
   mapPlaidHoldingAssetType,
 } from "../investments";
+import { appToday } from "../dates";
 
 export function plaidClient() {
   const env = (process.env.PLAID_ENV ?? "sandbox") as keyof typeof PlaidEnvironments;
@@ -191,11 +192,11 @@ export const plaidProvider: FinanceProvider = {
       }
     }
 
-    const endDate = new Date().toISOString().slice(0, 10);
+    const endDate = appToday();
     const startDate =
       investmentStartDate ??
       (() => {
-        const date = new Date();
+        const date = new Date(`${endDate}T00:00:00.000Z`);
         date.setUTCMonth(date.getUTCMonth() - 24);
         return date.toISOString().slice(0, 10);
       })();

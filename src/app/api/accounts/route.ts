@@ -2,6 +2,9 @@ import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
 import { ASSET_CLASS } from "@/lib/account-types";
 import { z } from "zod";
+import { appToday } from "@/lib/dates";
+import { isoDate } from "@/lib/validation";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const schema = z.object({
   name: z.string().min(1).max(100),
@@ -19,7 +22,7 @@ const schema = z.object({
     "other",
   ]),
   opening_balance: z.number(),
-  opening_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  opening_date: isoDate.optional(),
   mask: z.string().max(4).optional(),
 });
 
@@ -50,7 +53,7 @@ export async function POST(req: Request) {
     .eq("provider", "manual")
     .maybeSingle();
   if (existingInstitutionError) {
-    return Response.json({ error: existingInstitutionError.message }, { status: 500 });
+    return apiErrorResponse(existingInstitutionError);
   }
   let institutionId = existingInstitution?.id;
   if (!institutionId) {
@@ -59,7 +62,7 @@ export async function POST(req: Request) {
       .insert({ name: body.data.institution_name, provider: "manual" })
       .select("id")
       .single();
-    if (instErr) return Response.json({ error: instErr.message }, { status: 500 });
+    if (instErr) return apiErrorResponse(instErr);
     institutionId = inst.id;
   }
 
@@ -82,17 +85,18 @@ export async function POST(req: Request) {
     })
     .select()
     .single();
-  if (acctErr) return Response.json({ error: acctErr.message }, { status: 500 });
+  if (acctErr) return apiErrorResponse(acctErr);
 
-  const date =
-    body.data.opening_date ?? new Date().toISOString().slice(0, 10);
+  const date = body.data.opening_date ?? appToday();
   const { error: snapshotError } = await supabase.from("balance_snapshots").upsert({
     account_id: acct.id,
     date,
     balance: openingBalance,
+    source: "manual",
   });
   if (snapshotError) {
-    return Response.json({ error: snapshotError.message }, { status: 500 });
+    await supabase.from("accounts").delete().eq("id", acct.id);
+    return apiErrorResponse(snapshotError);
   }
 
   return Response.json(acct, { status: 201 });

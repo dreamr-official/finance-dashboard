@@ -35,6 +35,35 @@ describe("parseCsv", () => {
     expect(result.rows.map((row) => row.amount)).toEqual([-4.5]);
   });
 
+  it("skips impossible calendar dates with an invalid-date reason", () => {
+    const result = parseCsv("2026-02-31,Rent,-1500\n");
+    expect(result.rows).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skippedReasons).toContain("invalid date");
+  });
+
+  it("ignores balance columns whether values include decimals or not", () => {
+    const result = parseCsv(
+      "date,name,amount,balance\n2026-01-01,Coffee,-4,1200\n2026-01-02,Food,-12.50,1187.50",
+    );
+    expect(result.rows.map((row) => row.amount)).toEqual([-4, -12.5]);
+    expect(result.skipped).toBe(0);
+  });
+
+  it("joins a split thousands amount only when the next cell is three digits", () => {
+    const result = parseCsv(
+      "date,name,amount,balance\n2026-01-01,Large purchase,-1,234,1200\n2026-01-02,Coffee,-4,1200",
+    );
+    expect(result.rows.map((row) => row.amount)).toEqual([-1234, -4]);
+  });
+
+  it("normalizes signs for supplied transaction types", () => {
+    const result = parseCsv(
+      "2026-01-01,Expense,5,expense\n2026-01-02,Deposit,-10,deposit",
+    );
+    expect(result.rows.map((row) => row.amount)).toEqual([-5, 10]);
+  });
+
   it("accepts dollar-before-minus and parenthesized currency but not trailing minus", () => {
     const result = parseCsv(
       "2026-01-01,Refund,$-4.50\n2026-01-02,Refund,($4.50)\n2026-01-03,Refund,4.50-",
