@@ -12,10 +12,30 @@ import type { Account } from "./types";
 
 describe("Plaid investment transaction mapping", () => {
   it("maps contributions, dividends, and transfers by Plaid amount sign", () => {
-    expect(mapPlaidInvestmentType("contribution")).toBe("deposit");
+    expect(mapPlaidInvestmentType("cash", "contribution")).toBe("deposit");
     expect(mapPlaidInvestmentType("cash", "dividend reinvestment")).toBe("dividend");
     expect(mapPlaidInvestmentType("transfer", undefined, 10)).toBe("transfer_out");
     expect(mapPlaidInvestmentType("transfer", undefined, -10)).toBe("transfer_in");
+  });
+
+  it("uses contribution names only for inbound Plaid transfers", () => {
+    expect(
+      mapPlaidInvestmentType(
+        "transfer",
+        "transfer",
+        -500,
+        "CONTRIBUTION CURRENT YEAR",
+      ),
+    ).toBe("deposit");
+    expect(
+      mapPlaidInvestmentType(
+        "transfer",
+        "transfer",
+        500,
+        "CONTRIBUTION CURRENT YEAR",
+      ),
+    ).toBe("transfer_out");
+    expect(mapPlaidInvestmentType("buy", undefined, -500, "Contribution")).toBe("buy");
   });
 
   it("inverts the amount and prefixes investment transaction ids", () => {
@@ -117,8 +137,8 @@ describe("balance reconstruction", () => {
   });
 });
 
-describe("net worth history carry-back", () => {
-  it("uses earliest known balance before later snapshots and current balance without history", () => {
+describe("net worth history before first snapshot", () => {
+  it("uses zero before an account's first snapshot and current balance without history", () => {
     const account = (
       id: string,
       currentBalance: number,
@@ -146,7 +166,7 @@ describe("net worth history carry-back", () => {
         ],
       ),
     ).toEqual([
-      { date: "2026-01-01", value: 90 },
+      { date: "2026-01-01", value: 40 },
       { date: "2026-01-03", value: 90 },
       { date: "2026-01-05", value: 130 },
     ]);

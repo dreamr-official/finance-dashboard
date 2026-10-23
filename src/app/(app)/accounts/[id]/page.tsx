@@ -8,6 +8,7 @@ import {
   EditAccountButton,
   DeleteTransactionButton,
   RebuildHistoryButton,
+  TransactionTypeSelect,
 } from "./account-actions";
 import { BalanceChart } from "@/components/balance-chart";
 import { DonutChart } from "@/components/charts/donut-chart";
@@ -71,12 +72,14 @@ export default async function AccountPage({
           </div>
           {isAdmin && (
             <div className="flex flex-wrap items-center gap-2">
-              <AddTransactionButton account={account} />
+              {account.isManual && <AddTransactionButton account={account} />}
               <AddPastBalanceButton accountId={account.id} />
               {(account.assetClass === "cash" || account.assetClass === "liability") && (
                 <RebuildHistoryButton accountId={account.id} />
               )}
-              <TransferButton accounts={accounts} initialFromAccountId={account.id} />
+              {(account.isManual || accounts.some((a) => a.isManual && a.id !== account.id)) && (
+                <TransferButton accounts={accounts} initialFromAccountId={account.id} />
+              )}
               <EditAccountButton account={account} />
             </div>
           )}
@@ -247,9 +250,17 @@ export default async function AccountPage({
                   <div className="truncate font-medium">{t.name}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <span className="text-xs text-muted-foreground">{t.date}</span>
-                    <Badge variant={t.type === "deposit" ? "default" : "outline"}>
-                      {TYPE_LABEL[t.type] ?? t.type}
-                    </Badge>
+                    {isAdmin ? (
+                      <TransactionTypeSelect
+                        transactionId={t.id}
+                        transactionType={t.type}
+                        transactionName={t.name}
+                      />
+                    ) : (
+                      <Badge variant={t.type === "deposit" ? "default" : "outline"}>
+                        {TYPE_LABEL[t.type] ?? t.type}
+                      </Badge>
+                    )}
                   </div>
                 </div>
                 <div
@@ -294,9 +305,17 @@ export default async function AccountPage({
                     <TableCell className="text-muted-foreground">{t.date}</TableCell>
                     <TableCell>{t.name}</TableCell>
                     <TableCell>
-                      <Badge variant={t.type === "deposit" ? "default" : "outline"}>
-                        {TYPE_LABEL[t.type] ?? t.type}
-                      </Badge>
+                      {isAdmin ? (
+                        <TransactionTypeSelect
+                          transactionId={t.id}
+                          transactionType={t.type}
+                          transactionName={t.name}
+                        />
+                      ) : (
+                        <Badge variant={t.type === "deposit" ? "default" : "outline"}>
+                          {TYPE_LABEL[t.type] ?? t.type}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell
                       className={

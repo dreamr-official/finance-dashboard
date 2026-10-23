@@ -1,9 +1,117 @@
 import { describe, expect, it } from "vitest";
 import { summarizeActivity } from "./activity";
-import { classifyType } from "./transactions";
+import { classifyType, normalizeTransactionAmount } from "./transactions";
 import { buildTransferLegs } from "./transfers";
 import { convertPlaidTransaction, plaidAccountType } from "./integrations/plaid";
+import {
+  computeNetWorth,
+  netWorthSeries,
+  rothContributions,
+  isWithdrawal,
+} from "./finance";
 import type { Account, Transaction } from "./types";
+
+function account(
+  id: string,
+  currentBalance: number,
+  assetClass: Account["assetClass"] = "cash",
+  type: Account["type"] = "checking",
+): Account {
+  return {
+    id,
+    institutionId: "institution",
+    name: id,
+    type,
+    assetClass,
+    currency: "USD",
+    currentBalance,
+    lastSyncedAt: null,
+    isManual: true,
+    connectionStatus: "manual",
+  };
+}
+
+function transaction(
+  accountId: string,
+  date: string,
+  amount: number,
+  type: Transaction["type"],
+): Transaction {
+  return {
+    id: `${accountId}-${date}-${type}`,
+    accountId,
+    date,
+    name: type,
+    amount,
+    type,
+    typeOverridden: false,
+    pending: false,
+  };
+}
+
+describe("signed net worth", () => {
+  it("sums account balances consistently and derives liability display from signed balances", () => {
+    const summary = computeNetWorth([
+      account("cash", 100),
+      account("negative-cash", -20),
+      account("investment", 200, "investment", "brokerage"),
+      account("overpaid-card", 20, "liability", "credit_card"),
+      account("loan", -100, "liability", "loan"),
+    ]);
+
+    expect(summary).toMatchObject({
+      netWorth: 200,
+      assets: 280,
+      liabilities: 80,
+      cash: 80,
+      investments: 200,
+    });
+  });
+
+  it("starts accounts with history at zero before their first snapshot and adds signed balances", () => {
+    expect(
+      netWorthSeries(
+        [
+          account("cash", 100),
+          account("liability", 20, "liability", "credit_card"),
+          account("no-history", 30),
+        ],
+        [
+          { accountId: "cash", date: "2026-01-01", balance: 10 },
+          { accountId: "cash", date: "2026-01-05", balance: 50 },
+          { accountId: "liability", date: "2026-01-03", balance: -20 },
+          { accountId: "liability", date: "2026-01-05", balance: 10 },
+        ],
+      ),
+    ).toEqual([
+      { date: "2026-01-01", value: 40 },
+      { date: "2026-01-03", value: 20 },
+      { date: "2026-01-05", value: 90 },
+    ]);
+  });
+});
+
+describe("Roth contributions", () => {
+  it("counts gross deposits separately from withdrawals and excludes fees", () => {
+    const result = rothContributions(
+      [
+        account("roth", 0, "retirement", "roth_ira"),
+        account("cash", 0),
+      ],
+      [
+        transaction("roth", "2026-02-01", 2500, "deposit"),
+        transaction("roth", "2026-03-01", -800, "withdrawal"),
+        transaction("roth", "2026-03-02", -50, "fee"),
+        transaction("cash", "2026-03-03", 1000, "deposit"),
+        transaction("roth", "2025-12-31", 500, "deposit"),
+      ],
+      2026,
+    );
+
+    expect(result).toEqual({ deposits: 2500, withdrawals: 800 });
+    expect(isWithdrawal(transaction("roth", "2026-03-02", -50, "fee"))).toBe(false);
+  });
+});
 
 describe("Plaid account mapping", () => {
   it.each<[string, string, string]>([
@@ -54,6 +162,25 @@ describe("classifyType", () => {
     ["transfer out", -100],
   ])("never infers a deposit for %s", (name, amount) => {
     expect(classifyType(name, amount)).not.toBe("deposit");
+  });
+});
+
+describe("normalizeTransactionAmount", () => {
+  it.each([
+    ["deposit", -50, 50],
+    ["income", -50, 50],
+    ["dividend", -50, 50],
+    ["interest", -50, 50],
+    ["transfer_in", -50, 50],
+    ["sell", -50, 50],
+    ["withdrawal", 50, -50],
+    ["expense", 50, -50],
+    ["fee", 50, -50],
+    ["transfer_out", 50, -50],
+    ["buy", 50, -50],
+    ["other", -50, -50],
+  ])("normalizes %s", (type, amount, expected) => {
+    expect(normalizeTransactionAmount(amount, type)).toBe(expected);
   });
 });
 

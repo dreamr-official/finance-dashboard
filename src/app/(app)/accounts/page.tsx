@@ -29,7 +29,9 @@ export default async function AccountsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
         {isAdmin && (
           <div className="flex flex-wrap items-center gap-2">
-            <TransferButton accounts={accounts} />
+            {accounts.length > 1 && accounts.some((account) => account.isManual) && (
+              <TransferButton accounts={accounts} />
+            )}
             <AddAccountDialog />
             {isPlaidConfigured() && !isDemoMode() && (
               <>

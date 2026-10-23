@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Account } from "@/lib/types";
+import type { Account, AccountType, Transaction } from "@/lib/types";
+import { ACCOUNT_TYPE_OPTIONS } from "@/lib/account-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -138,6 +139,54 @@ const TXN_TYPES = [
   { value: "other", label: "Other" },
 ];
 
+export function TransactionTypeSelect({
+  transactionId,
+  transactionType,
+  transactionName,
+}: {
+  transactionId: string;
+  transactionType: Transaction["type"];
+  transactionName: string;
+}) {
+  const router = useRouter();
+  const [value, setValue] = useState(transactionType);
+  const [saving, setSaving] = useState(false);
+
+  async function updateType(nextType: string | null) {
+    if (!nextType || nextType === value) return;
+    setSaving(true);
+    const response = await fetch(`/api/transactions/${transactionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: nextType }),
+    });
+    setSaving(false);
+    if (response.ok) {
+      setValue(nextType as Transaction["type"]);
+      router.refresh();
+    }
+  }
+
+  return (
+    <Select value={value} onValueChange={updateType}>
+      <SelectTrigger
+        aria-label={`Edit type for ${transactionName}`}
+        className="h-7 w-[132px] text-xs"
+        disabled={saving}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {TXN_TYPES.map((type) => (
+          <SelectItem key={type.value} value={type.value}>
+            {type.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function AddTransactionButton({ account }: { account: Account }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -239,6 +288,7 @@ export function EditAccountButton({ account }: { account: Account }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [accountType, setAccountType] = useState<AccountType>(account.type);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -250,6 +300,7 @@ export function EditAccountButton({ account }: { account: Account }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: fd.get("name"),
+        type: accountType,
         ...(account.isManual
           ? { current_balance: Number(fd.get("current_balance")) }
           : {}),
@@ -289,6 +340,24 @@ export function EditAccountButton({ account }: { account: Account }) {
             <div>
               <Label htmlFor="name">Name</Label>
               <Input id="name" name="name" defaultValue={account.name} required />
+            </div>
+            <div>
+              <Label>Type</Label>
+              <Select
+                value={accountType}
+                onValueChange={(value) => value && setAccountType(value as AccountType)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ACCOUNT_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {account.isManual && (
               <div>

@@ -19,10 +19,10 @@ import { DonutChart } from "@/components/charts/donut-chart";
 import Link from "next/link";
 
 
-const TAX_YEAR = new Date().getFullYear();
-
 export default async function InvestmentsPage() {
+  const TAX_YEAR = new Date().getUTCFullYear();
   const { accounts, transactions, holdings } = await getDataset();
+  const rothAccounts = accounts.filter((account) => account.type === "roth_ira");
   const investAccounts = accounts.filter(
     (a) => a.assetClass === "investment" || a.assetClass === "retirement",
   );
@@ -102,7 +102,9 @@ export default async function InvestmentsPage() {
   });
   const roth = rothContributions(accounts, transactions, TAX_YEAR);
   const rothLimit = DEFAULT_ROTH_LIMITS[TAX_YEAR];
-  const rothPct = rothLimit ? Math.min(100, (roth.net / rothLimit) * 100) : null;
+  const rothPct = rothLimit
+    ? Math.min(100, (roth.deposits / rothLimit) * 100)
+    : null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -251,19 +253,19 @@ export default async function InvestmentsPage() {
           <CardTitle className="flex flex-wrap items-center justify-between gap-2">
             Roth IRA contributions — {TAX_YEAR}
             <span className="text-sm font-normal text-muted-foreground">
-              limit configurable in Settings
+              IRS limit
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span className="tabular-nums font-medium">
-              {fmtCurrency(roth.net, { decimals: 0 })}
+              {fmtCurrency(roth.deposits, { decimals: 0 })}
               {rothLimit ? ` of ${fmtCurrency(rothLimit, { decimals: 0 })}` : ""}
             </span>
             {rothLimit && (
               <span className="text-muted-foreground">
-                {fmtCurrency(rothLimit - roth.net, { decimals: 0 })} remaining
+                {fmtCurrency(Math.max(0, rothLimit - roth.deposits), { decimals: 0 })} remaining
               </span>
             )}
           </div>
@@ -273,6 +275,21 @@ export default async function InvestmentsPage() {
               style={{ width: `${rothPct ?? 0}%` }}
             />
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Withdrawals this year: {fmtCurrency(roth.withdrawals, { decimals: 0 })}
+          </p>
+          {!rothAccounts.length ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              No account is marked as a Roth IRA — open the account and set its type to Roth IRA.
+            </p>
+          ) : (
+            roth.deposits === 0 && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                No contributions found for {TAX_YEAR}. If a contribution shows as a transfer or
+                other, open the account and change that transaction&apos;s type to Deposit.
+              </p>
+            )
+          )}
         </CardContent>
       </Card>
 

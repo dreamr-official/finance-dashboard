@@ -6,3 +6,17 @@ export function classifyType(name: string, amount: number): string {
   }
   return amount >= 0 ? "income" : "expense";
 }
+
+export function normalizeTransactionAmount(amount: number, type: string): number {
+  if (
+    ["deposit", "income", "dividend", "interest", "transfer_in", "sell"].includes(type)
+  ) {
+    return Math.abs(amount);
+  }
+  if (
+    ["withdrawal", "expense", "fee", "transfer_out", "buy"].includes(type)
+  ) {
+    return -Math.abs(amount);
+  }
+  return amount;
+}
