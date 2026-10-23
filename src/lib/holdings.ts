@@ -1,6 +1,17 @@
 import type { Account, Holding } from "./types";
 import { isLiability } from "./finance";
 
+export {
+  HOLDING_ASSET_TYPES,
+  canManageHoldings,
+  holdingCreateSchema,
+  holdingPatchSchema,
+  holdingsBalanceGap,
+  toHoldingInsert,
+  toHoldingUpdate,
+} from "./manual-holdings";
+export type { HoldingCreateInput, HoldingPatchInput, HoldingRow } from "./manual-holdings";
+
 export interface Slice {
   key: string;
   label: string;

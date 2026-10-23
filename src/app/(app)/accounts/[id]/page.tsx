@@ -23,6 +23,12 @@ import {
 } from "@/components/ui/table";
 import { notFound } from "next/navigation";
 import { TransferButton } from "../transfer-dialog";
+import {
+  AddHoldingButton,
+  HoldingRowActions,
+  HoldingsManager,
+} from "./holdings-manager";
+import { canManageHoldings } from "@/lib/manual-holdings";
 
 
 const TYPE_LABEL: Record<string, string> = {
@@ -60,6 +66,7 @@ export default async function AccountPage({
     account.assetClass === "investment" ||
     account.assetClass === "retirement" ||
     acctHoldings.length > 0;
+  const canEditHoldings = isAdmin && canManageHoldings(account);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -112,18 +119,23 @@ export default async function AccountPage({
 
       {showHoldings && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
             <CardTitle>Holdings</CardTitle>
-            {acctHoldings.length > 0 && (
-              <span className="shrink-0 text-right text-xs font-normal text-muted-foreground">
-                {holdingShares.length} positions · {fmtCurrency(holdingTotal)}
-              </span>
-            )}
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {acctHoldings.length > 0 && (
+                <span className="shrink-0 text-right text-xs font-normal text-muted-foreground">
+                  {holdingShares.length} positions · {fmtCurrency(holdingTotal)}
+                </span>
+              )}
+              {canEditHoldings && <AddHoldingButton accountId={account.id} />}
+            </div>
           </CardHeader>
           {!acctHoldings.length ? (
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                No holdings yet — link via Plaid (Settings → Grant investment access) or add manually.
+                {account.isManual
+                  ? "No holdings yet — add your first holding."
+                  : "No holdings yet — grant investment access in Settings to pull them from Plaid."}
               </p>
             </CardContent>
           ) : (
@@ -143,8 +155,13 @@ export default async function AccountPage({
                           <div className="font-medium">{h.symbol}</div>
                           <div className="truncate text-xs text-muted-foreground">{h.name}</div>
                         </div>
-                        <div className="shrink-0 text-right font-medium tabular-nums">
-                          {fmtCurrency(h.value)}
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <div className="text-right font-medium tabular-nums">
+                            {fmtCurrency(h.value)}
+                          </div>
+                          {canEditHoldings && (
+                            <HoldingRowActions accountId={account.id} holding={h} />
+                          )}
                         </div>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm">
@@ -198,6 +215,9 @@ export default async function AccountPage({
                         <TableHead className="text-right">Value</TableHead>
                         <TableHead className="text-right">% of account</TableHead>
                         <TableHead className="text-right">Cost basis</TableHead>
+                        {canEditHoldings && (
+                          <TableHead className="w-24 text-right">Actions</TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -224,12 +244,20 @@ export default async function AccountPage({
                           <TableCell className="text-right tabular-nums">
                             {h.costBasis === undefined ? "—" : fmtCurrency(h.costBasis)}
                           </TableCell>
+                          {canEditHoldings && (
+                            <TableCell className="text-right">
+                              <HoldingRowActions accountId={account.id} holding={h} />
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </div>
               </div>
+              {canManageHoldings(account) && (
+                <HoldingsManager account={account} holdings={acctHoldings} />
+              )}
             </CardContent>
           )}
         </Card>
