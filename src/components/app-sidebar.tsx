@@ -8,6 +8,7 @@ import {
   Repeat,
   Wallet,
   ArrowLeftRight,
+  ArrowRightLeft,
   Settings,
   Menu,
   Sun,
@@ -25,6 +26,7 @@ const NAV = [
   { href: "/investments", label: "Investments", icon: TrendingUp },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/activity", label: "Activity", icon: ArrowLeftRight },
+  { href: "/transfers", label: "Transfers", icon: ArrowRightLeft },
   { href: "/subscriptions", label: "Subscriptions", icon: Repeat },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

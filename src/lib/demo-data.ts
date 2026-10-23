@@ -192,6 +192,22 @@ export const demoTransactions: Transaction[] = [
   ]),
   // transfers between investment accounts (rollover, correctly excluded)
   ...transferPair("a-fid-brok", "a-fid-roth", 140, 1000, "Fidelity Roth IRA"),
+  // checking outflows that funded the deposits above (unlinked; matched by the Transfers page)
+  ...(
+    [
+      [28, 2000, "Fidelity"], [58, 2000, "Fidelity"], [120, 2000, "Fidelity"],
+      [150, 2500, "Fidelity"], [200, 2000, "Fidelity"], [260, 3000, "Fidelity"],
+      [340, 2000, "Fidelity"], [35, 1500, "Robinhood"], [95, 1500, "Robinhood"],
+      [160, 1000, "Robinhood"], [230, 1500, "Robinhood"], [300, 1000, "Robinhood"],
+      [20, 1000, "Fidelity"], [50, 1000, "Fidelity"], [80, 1500, "Fidelity"],
+      [110, 1500, "Fidelity"], [320, 2000, "Fidelity"], [350, 2000, "Fidelity"],
+      [60, 500, "Robinhood"], [130, 1000, "Robinhood"],
+    ] as const
+  ).map(([daysAgo, amount, to]) =>
+    txn("a-bofa-chk", daysAgo + 1, `Online Banking transfer to ${to}`, -amount, "transfer_out"),
+  ),
+  txn("a-bofa-chk", 46, "Online Banking transfer to Schwab", -750.0, "transfer_out"),
+  txn("a-bofa-chk", 1, "Transfer to Happen HYSA", -500.0, "transfer_out", { pending: true }),
 ];
 
 export const demoHoldings: Holding[] = [
