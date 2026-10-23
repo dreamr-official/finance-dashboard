@@ -147,8 +147,10 @@ export async function syncConnection(
           if (previous) {
             previous.quantity += holding.quantity;
             previous.value += holding.value;
-            previous.costBasis =
-              (previous.costBasis ?? 0) + (holding.costBasis ?? 0);
+            if (previous.costBasis !== undefined || holding.costBasis !== undefined) {
+              previous.costBasis =
+                (previous.costBasis ?? 0) + (holding.costBasis ?? 0);
+            }
             previous.price = previous.quantity ? previous.value / previous.quantity : 0;
           } else {
             grouped.set(key, { ...holding });
@@ -248,6 +250,7 @@ export async function syncConnection(
         if (
           !existing &&
           (finalType === "dividend" || finalType === "interest") &&
+          t.amount > 0 &&
           isRecentIncomeDate(t.date, new Date(now))
         ) {
           newIncomeRows.push({
@@ -321,7 +324,9 @@ export async function syncConnection(
     }
     return { connection: conn.id, synced: sync.accounts.length };
   } catch (error) {
-    await markSyncFailure(supabase, conn.id, error);
+    try {
+      await markSyncFailure(supabase, conn.id, error);
+    } catch {}
     throw error;
   }
 }

@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/auth"];
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/cron"];
 
 /**
  * Auth gate. When Supabase env vars are absent the app runs in demo mode
@@ -33,21 +33,56 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isPublic = PUBLIC_PATHS.some((p) => request.nextUrl.pathname.startsWith(p));
+  const pathname = request.nextUrl.pathname;
+  const isPublic = PUBLIC_PATHS.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
+
+  if (
+    user &&
+    pathname === "/login" &&
+    request.nextUrl.searchParams.get("error") === "not_authorized"
+  ) {
+    await supabase.auth.signOut();
+    return response;
+  }
+
+  if (user && (!isPublic || pathname === "/login")) {
+    const { data: assurance } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    const needsMfa =
+      assurance?.nextLevel === "aal2" && assurance.currentLevel !== "aal2";
+    if (needsMfa) {
+      if (pathname.startsWith("/api/")) {
+        return Response.json({ error: "MFA required" }, { status: 401 });
+      }
+      if (pathname !== "/login") {
+        const redirect = request.nextUrl.clone();
+        redirect.pathname = "/login";
+        redirect.search = "?mfa=1";
+        return NextResponse.redirect(redirect);
+      }
+      return response;
+    }
+  }
+
   if (!user && !isPublic) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.search = "";
     return NextResponse.redirect(redirect);
   }
-  if (user && request.nextUrl.pathname === "/login") {
+  if (user && pathname === "/login") {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/overview";
+    redirect.search = "";
     return NextResponse.redirect(redirect);
   }
   return response;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js$|manifest\\.webmanifest$|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };

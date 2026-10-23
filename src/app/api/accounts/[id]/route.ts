@@ -29,7 +29,7 @@ export async function PATCH(
     return Response.json({ error: "Mutations require Supabase" }, { status: 501 });
   }
   const { id } = await params;
-  const body = patchSchema.safeParse(await req.json());
+  const body = patchSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }

@@ -170,7 +170,7 @@ describe("balance reconstruction", () => {
 });
 
 describe("net worth history before first snapshot", () => {
-  it("uses zero before an account's first snapshot and current balance without history", () => {
+  it("uses the earliest snapshot before its date and current balance without history", () => {
     const account = (
       id: string,
       currentBalance: number,
@@ -198,7 +198,7 @@ describe("net worth history before first snapshot", () => {
         ],
       ),
     ).toEqual([
-      { date: "2026-01-01", value: 40 },
+      { date: "2026-01-01", value: 90 },
       { date: "2026-01-03", value: 90 },
       { date: "2026-01-05", value: 130 },
     ]);

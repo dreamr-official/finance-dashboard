@@ -69,6 +69,7 @@ export interface Transaction {
   typeOverridden?: boolean;
   pending?: boolean;
   category?: string;
+  taxYear?: number;
 }
 
 export interface Holding {
@@ -105,5 +106,10 @@ export interface NetWorthSummary {
   liabilities: number;
   cash: number;
   investments: number;
-  change: { day: number; week: number; month: number; year: number };
+  change: {
+    day: number | null;
+    week: number | null;
+    month: number | null;
+    year: number | null;
+  };
 }

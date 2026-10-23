@@ -2,6 +2,7 @@ import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { getProvider } from "@/lib/integrations/registry";
 import { isDemoMode } from "@/lib/env";
 import { syncConnection } from "@/lib/sync";
+import { findDuplicateLinkedAccount } from "@/lib/plaid-duplicates";
 import { z } from "zod";
 
 const schema = z.object({
@@ -13,6 +14,10 @@ const schema = z.object({
     })
     .nullable()
     .optional(),
+  accounts: z.array(z.object({
+    mask: z.string().nullable().optional(),
+    name: z.string(),
+  })).optional(),
 });
 
 /** Admin-only: exchange Plaid public_token; stores the encrypted access
@@ -34,7 +39,7 @@ export async function POST(req: Request) {
   if (!plaid.configured) {
     return Response.json({ error: "Plaid is not configured" }, { status: 501 });
   }
-  const body = schema.safeParse(await req.json());
+  const body = schema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }
@@ -45,8 +50,45 @@ export async function POST(req: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
 
-    let institutionId: string | null = null;
     const institutionName = body.data.institution?.name;
+    const incomingMasks = body.data.accounts?.map((account) => account.mask ?? null) ?? [];
+    if (institutionName && incomingMasks.some(Boolean)) {
+      const { data: candidates, error: candidatesError } = await supabase
+        .from("accounts")
+        .select("mask,connection_id,institution_id")
+        .not("connection_id", "is", null)
+        .in("mask", incomingMasks.filter((mask): mask is string => Boolean(mask)));
+      if (candidatesError) throw new Error(candidatesError.message);
+      const institutionIds = [...new Set(
+        (candidates ?? []).map((account) => account.institution_id).filter(Boolean),
+      )];
+      const { data: institutions, error: institutionsError } = institutionIds.length
+        ? await supabase.from("institutions").select("id,name").in("id", institutionIds)
+        : { data: [], error: null };
+      if (institutionsError) throw new Error(institutionsError.message);
+      const nameById = new Map(
+        (institutions ?? []).map((institution) => [institution.id, institution.name]),
+      );
+      const duplicate = findDuplicateLinkedAccount(
+        institutionName,
+        incomingMasks,
+        (candidates ?? []).map((account) => ({
+          mask: account.mask,
+          connectionId: account.connection_id,
+          institutionName: nameById.get(account.institution_id) ?? "",
+        })),
+      );
+      if (duplicate?.mask) {
+        return Response.json(
+          {
+            error: `${institutionName} is already linked (••${duplicate.mask.slice(-4)}). Use Reconnect in Settings instead of linking it again.`,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    let institutionId: string | null = null;
     if (institutionName) {
       const { data: existingInstitution, error: institutionError } = await supabase
         .from("institutions")

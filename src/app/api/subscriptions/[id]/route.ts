@@ -32,7 +32,7 @@ async function handler(
     if (error) return Response.json({ error: error.message }, { status: 500 });
     return new Response(null, { status: 204 });
   }
-  const body = patchSchema.safeParse(await req.json());
+  const body = patchSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }

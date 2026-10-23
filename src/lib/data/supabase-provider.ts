@@ -85,6 +85,7 @@ export async function fetchDataset(): Promise<Dataset> {
         typeOverridden: t.type_overridden,
         pending: t.pending,
         category: t.category ?? undefined,
+        taxYear: t.tax_year ?? undefined,
       }),
     ),
     holdings: holds.map((h) => ({

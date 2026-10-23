@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import type { Account, Subscription } from "@/lib/types";
 import { fmtCurrency, fmtDate } from "@/lib/format";
-import { getSubscriptionNextPaymentDate, getUpcomingSubscriptions } from "@/lib/subscriptions";
+import {
+  getSubscriptionNextPaymentDate,
+  getUpcomingSubscriptions,
+  isSubscriptionDatePredicted,
+} from "@/lib/subscriptions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -224,22 +228,24 @@ export function SubscriptionsClient({
     router.refresh();
   }
 
+  const today = useMemo(() => new Date(), []);
   const sorted = useMemo(
     () =>
       [...subscriptions].sort((a, b) => {
         if (sort === "name") return a.name.localeCompare(b.name);
         if (sort === "cost") return b.amount - a.amount;
-        return getSubscriptionNextPaymentDate(a).localeCompare(getSubscriptionNextPaymentDate(b));
+        return getSubscriptionNextPaymentDate(a, today).localeCompare(
+          getSubscriptionNextPaymentDate(b, today),
+        );
       }),
-    [subscriptions, sort],
+    [subscriptions, sort, today],
   );
 
-  const today = new Date();
   const upcoming30 = getUpcomingSubscriptions(subscriptions, today, 30);
   const upcoming7 = getUpcomingSubscriptions(subscriptions, today, 7);
   const markedDates = subscriptions
     .filter((s) => s.status === "active")
-    .map((s) => new Date(getSubscriptionNextPaymentDate(s) + "T12:00:00"));
+    .map((s) => new Date(getSubscriptionNextPaymentDate(s, today) + "T12:00:00"));
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -295,9 +301,9 @@ export function SubscriptionsClient({
               <div className="grid grid-cols-2 gap-3 border-t pt-3">
                 <div>
                   <div className="text-xs text-muted-foreground">Next payment</div>
-                  <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s))}</div>
+                  <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s, today))}</div>
                   <div className="text-xs text-muted-foreground">
-                    {s.dateVerified ? "verified" : "predicted"}
+                    {isSubscriptionDatePredicted(s, today) ? "predicted" : "verified"}
                   </div>
                 </div>
                 <div className="min-w-0">
@@ -357,9 +363,9 @@ export function SubscriptionsClient({
                       {fmtCurrency(s.amount)}
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s))}</div>
+                      <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s, today))}</div>
                       <div className="text-xs text-muted-foreground">
-                        {s.dateVerified ? "verified" : "predicted"}
+                        {isSubscriptionDatePredicted(s, today) ? "predicted" : "verified"}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">

@@ -324,6 +324,9 @@ export default async function AccountPage({
                               transactionId={t.id}
                               transactionType={t.type}
                               transactionName={t.name}
+                              transactionDate={t.date}
+                              transactionTaxYear={t.taxYear}
+                              accountType={account.type}
                             />
                           ) : (
                             <Badge variant={t.type === "deposit" ? "default" : "outline"}>
@@ -399,6 +402,9 @@ export default async function AccountPage({
                               transactionId={t.id}
                               transactionType={t.type}
                               transactionName={t.name}
+                              transactionDate={t.date}
+                              transactionTaxYear={t.taxYear}
+                              accountType={account.type}
                             />
                           ) : (
                             <Badge variant={t.type === "deposit" ? "default" : "outline"}>

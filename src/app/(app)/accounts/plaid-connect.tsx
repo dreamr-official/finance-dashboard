@@ -33,6 +33,10 @@ export function ConnectBankButton() {
                   institution_id: metadata.institution.institution_id,
                 }
               : null,
+            accounts: metadata.accounts.map((account) => ({
+              mask: account.mask ?? null,
+              name: account.name,
+            })),
           }),
         });
         const result = await response.json();

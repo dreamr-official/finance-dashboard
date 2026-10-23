@@ -18,16 +18,24 @@ const VALID_TYPES = new Set([
 ]);
 
 function parseAmount(value: string): number | null {
-  const trimmed = value.trim();
-  const parenthesized = /^\(.*\)$/.test(trimmed);
-  const normalized = trimmed
-    .replace(/^\((.*)\)$/, "$1")
-    .replace(/^\$/, "")
-    .replace(/,/g, "")
-    .trim();
-  const parsed = Number(normalized);
+  let normalized = value.trim();
+  if (!normalized) return null;
+  const parenthesized = normalized.startsWith("(") && normalized.endsWith(")");
+  if (parenthesized) normalized = normalized.slice(1, -1).trim();
+  let negative = parenthesized;
+  if (normalized.startsWith("-")) {
+    negative = true;
+    normalized = normalized.slice(1);
+  }
+  if (normalized.startsWith("$")) normalized = normalized.slice(1);
+  if (normalized.startsWith("-")) {
+    negative = true;
+    normalized = normalized.slice(1);
+  }
+  if (!/^(?:\d[\d,]*(?:\.\d+)?|\.\d+)$/.test(normalized)) return null;
+  const parsed = Number(normalized.replace(/,/g, ""));
   if (!Number.isFinite(parsed)) return null;
-  return parenthesized ? -Math.abs(parsed) : parsed;
+  return negative ? -Math.abs(parsed) : parsed;
 }
 
 export function parseCsv(csv: string) {
@@ -44,6 +52,7 @@ export function parseCsv(csv: string) {
   }[] = [];
   const occurrences = new Map<string, number>();
   let skipped = parsed.errors.length;
+  const skippedReasons: string[] = [];
 
   for (const fields of parsed.data) {
     const cells = fields.map((field) => String(field ?? "").trim());
@@ -67,7 +76,13 @@ export function parseCsv(csv: string) {
       skipped += 1;
       continue;
     }
-    const amount = parseAmount(amountParts.join(""));
+    const amountRaw = amountParts.join("").trim();
+    if (!amountRaw) {
+      skipped += 1;
+      skippedReasons.push("missing amount");
+      continue;
+    }
+    const amount = parseAmount(amountRaw);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !name || amount === null) {
       skipped += 1;
       continue;
@@ -86,5 +101,5 @@ export function parseCsv(csv: string) {
       type,
     });
   }
-  return { rows, skipped };
+  return { rows, skipped, skippedReasons };
 }

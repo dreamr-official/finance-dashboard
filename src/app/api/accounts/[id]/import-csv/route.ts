@@ -1,6 +1,7 @@
 import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
 import { parseCsv } from "@/lib/csv-import";
+import { chunk } from "@/lib/transaction-list";
 import { z } from "zod";
 
 const schema = z.object({
@@ -21,13 +22,13 @@ export async function POST(
     return Response.json({ error: "Mutations require Supabase" }, { status: 501 });
   }
   const { id } = await params;
-  const body = schema.safeParse(await req.json());
+  const body = schema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }
-  const { rows, skipped } = parseCsv(body.data.csv);
+  const { rows, skipped, skippedReasons } = parseCsv(body.data.csv);
   if (!rows.length) {
-    return Response.json({ imported: 0, skipped });
+    return Response.json({ imported: 0, skipped, skippedReasons });
   }
 
   const { createClient } = await import("@/lib/supabase/server");
@@ -45,13 +46,25 @@ export async function POST(
   }
 
   const providerTxnIds = rows.map((row) => row.provider_txn_id);
-  const { data: existingRows, error: existingError } = await supabase
-    .from("transactions")
-    .select("provider_txn_id,amount,type,type_overridden")
-    .eq("account_id", id)
-    .in("provider_txn_id", providerTxnIds);
-  if (existingError) return Response.json({ error: existingError.message }, { status: 500 });
-  const existingById = new Map((existingRows ?? []).map((row) => [row.provider_txn_id, row]));
+  const existingById = new Map<string, {
+    provider_txn_id: string | null;
+    amount: number;
+    type: string;
+    type_overridden: boolean;
+  }>();
+  for (const idBatch of chunk(providerTxnIds, 200)) {
+    const { data: existingRows, error: existingError } = await supabase
+      .from("transactions")
+      .select("provider_txn_id,amount,type,type_overridden")
+      .eq("account_id", id)
+      .in("provider_txn_id", idBatch);
+    if (existingError) {
+      return Response.json({ error: existingError.message }, { status: 500 });
+    }
+    for (const row of existingRows ?? []) {
+      if (row.provider_txn_id) existingById.set(row.provider_txn_id, row);
+    }
+  }
   const delta = rows.reduce((sum, row) => {
     const existing = existingById.get(row.provider_txn_id);
     return sum + row.amount - (existing ? Number(existing.amount) : 0);
@@ -66,12 +79,12 @@ export async function POST(
     };
   });
 
-  const { error: upErr } = await supabase
-    .from("transactions")
-    .upsert(upsertRows, {
-      onConflict: "account_id,provider_txn_id",
-    });
-  if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
+  for (const rowBatch of chunk(upsertRows, 500)) {
+    const { error: upErr } = await supabase
+      .from("transactions")
+      .upsert(rowBatch, { onConflict: "account_id,provider_txn_id" });
+    if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
+  }
 
   const balance = Number(acct.current_balance) + delta;
   const { error: balanceError } = await supabase
@@ -85,5 +98,5 @@ export async function POST(
     .upsert({ account_id: id, date: today, balance });
   if (snapshotError) return Response.json({ error: snapshotError.message }, { status: 500 });
 
-  return Response.json({ imported: rows.length, skipped });
+  return Response.json({ imported: rows.length, skipped, skippedReasons });
 }

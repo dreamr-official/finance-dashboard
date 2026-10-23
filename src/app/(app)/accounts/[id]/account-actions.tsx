@@ -143,14 +143,30 @@ export function TransactionTypeSelect({
   transactionId,
   transactionType,
   transactionName,
+  transactionDate,
+  accountType,
+  transactionTaxYear,
 }: {
   transactionId: string;
   transactionType: Transaction["type"];
   transactionName: string;
+  transactionDate: string;
+  accountType: Account["type"];
+  transactionTaxYear?: number;
 }) {
   const router = useRouter();
   const [value, setValue] = useState(transactionType);
+  const [taxYear, setTaxYear] = useState(
+    transactionTaxYear ?? Number(transactionDate.slice(0, 4)),
+  );
   const [saving, setSaving] = useState(false);
+  const dateYear = Number(transactionDate.slice(0, 4));
+  const monthDay = transactionDate.slice(5);
+  const canSetTaxYear =
+    accountType === "roth_ira" &&
+    transactionType === "deposit" &&
+    monthDay >= "01-01" &&
+    monthDay <= "04-15";
 
   async function updateType(nextType: string | null) {
     if (!nextType || nextType === value) return;
@@ -168,22 +184,55 @@ export function TransactionTypeSelect({
   }
 
   return (
-    <Select value={value} onValueChange={updateType}>
-      <SelectTrigger
-        aria-label={`Edit type for ${transactionName}`}
-        className="h-7 w-[132px] text-xs"
-        disabled={saving}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {TXN_TYPES.map((type) => (
-          <SelectItem key={type.value} value={type.value}>
-            {type.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex flex-wrap items-center gap-2">
+      <Select value={value} onValueChange={updateType}>
+        <SelectTrigger
+          aria-label={`Edit type for ${transactionName}`}
+          className="h-7 w-[132px] text-xs"
+          disabled={saving}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {TXN_TYPES.map((type) => (
+            <SelectItem key={type.value} value={type.value}>
+              {type.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {canSetTaxYear && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <span>Counts toward</span>
+          <Select
+            value={String(taxYear)}
+            onValueChange={async (nextYear) => {
+              if (!nextYear) return;
+              const year = Number(nextYear);
+              setSaving(true);
+              const response = await fetch(`/api/transactions/${transactionId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ taxYear: year }),
+              });
+              setSaving(false);
+              if (response.ok) {
+                setTaxYear(year);
+                router.refresh();
+              }
+            }}
+          >
+            <SelectTrigger aria-label="Counts toward tax year" className="h-7 w-[100px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={String(dateYear)}>{dateYear}</SelectItem>
+              <SelectItem value={String(dateYear - 1)}>{dateYear - 1}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -1,81 +1,107 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function LoginForm() {
+export function LoginForm({ initialMfaRequired = false }: { initialMfaRequired?: boolean }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [mfaNeeded, setMfaNeeded] = useState(false);
+  const [mfaNeeded, setMfaNeeded] = useState(initialMfaRequired);
   const [factorId, setFactorId] = useState<string | null>(null);
   const [code, setCode] = useState("");
+
+  useEffect(() => {
+    if (!mfaNeeded || factorId) return;
+    let active = true;
+    async function loadFactor() {
+      try {
+        const { data, error: factorError } = await createClient().auth.mfa.listFactors();
+        if (!active) return;
+        if (factorError) {
+          setError(factorError.message);
+          return;
+        }
+        const factor = data?.totp.find((item) => item.status === "verified");
+        if (!factor) {
+          setError("No verified authenticator factor is available.");
+          return;
+        }
+        setFactorId(factor.id);
+      } catch (err) {
+        if (active) {
+          setError(err instanceof Error ? err.message : "Could not load authenticator.");
+        }
+      }
+    }
+    void loadFactor();
+    return () => {
+      active = false;
+    };
+  }, [factorId, mfaNeeded]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     const fd = new FormData(e.currentTarget);
-    let supabase;
     try {
-      supabase = createClient();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Configuration error");
-      setLoading(false);
-      return;
-    }
-    let error;
-    try {
-      ({ error } = await supabase.auth.signInWithPassword({
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email: String(fd.get("email")),
         password: String(fd.get("password")),
-      }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in request failed");
-      setLoading(false);
-      return;
-    }
-    if (error) {
-      // If MFA is required, Supabase returns aal1 session — challenge next.
-      const { data } = await supabase.auth.mfa.listFactors();
-      const totp = data?.totp?.[0];
-      if (totp) {
-        const { data: ch } = await supabase.auth.mfa.challenge({ factorId: totp.id });
-        setFactorId(ch?.id ?? totp.id);
-        setMfaNeeded(true);
-        setLoading(false);
+      });
+      if (signInError) {
+        setError(signInError.message);
         return;
       }
-      setError(error.message);
+      const { data: assurance, error: assuranceError } =
+        await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assuranceError) {
+        setError(assuranceError.message);
+        return;
+      }
+      if (
+        assurance.nextLevel === "aal2" &&
+        assurance.currentLevel !== "aal2"
+      ) {
+        setMfaNeeded(true);
+        return;
+      }
+      router.push("/overview");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in request failed");
+    } finally {
       setLoading(false);
-      return;
     }
-    // Non-allowlisted users are signed back out immediately.
-    router.push("/overview");
-    router.refresh();
   }
 
   async function verifyMfa(e: React.FormEvent) {
     e.preventDefault();
     if (!factorId) return;
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.mfa.verify({
-      factorId: (await supabase.auth.mfa.listFactors()).data?.totp?.[0]?.id ?? "",
-      challengeId: factorId,
-      code,
-    });
-    if (error) {
-      setError(error.message);
+    setError(null);
+    try {
+      const { error: verifyError } = await createClient().auth.mfa.challengeAndVerify({
+        factorId,
+        code,
+      });
+      if (verifyError) {
+        setError(verifyError.message);
+        return;
+      }
+      router.push("/overview");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Authenticator verification failed.");
+    } finally {
       setLoading(false);
-      return;
     }
-    router.push("/overview");
-    router.refresh();
   }
 
   if (mfaNeeded) {
@@ -88,12 +114,16 @@ export function LoginForm() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             inputMode="numeric"
+            autoComplete="one-time-code"
             placeholder="123456"
+            maxLength={6}
             required
           />
         </div>
         {error && <p className="text-sm text-red-500">{error}</p>}
-        <Button type="submit" disabled={loading}>Verify</Button>
+        <Button type="submit" disabled={loading || !factorId}>
+          {loading ? "Verifying…" : "Verify"}
+        </Button>
       </form>
     );
   }
