@@ -79,11 +79,29 @@ export interface AccountChange {
   change: number | null;
   pct: number | null;
   isNew: boolean;
+  moneyAdded: number | null;
+  marketChange: number | null;
+}
+
+const MONEY_ADDED_TYPES = new Set<Transaction["type"]>([
+  "deposit",
+  "withdrawal",
+  "transfer_in",
+  "transfer_out",
+  "income",
+  "expense",
+  "other",
+]);
+
+function roundCents(value: number) {
+  const rounded = Number(value.toFixed(2));
+  return rounded === 0 ? 0 : rounded;
 }
 
 export function accountChanges(
   accounts: Account[],
   snapshots: BalanceSnapshot[],
+  transactions: Transaction[],
   today: string,
   days: number,
 ): AccountChange[] {
@@ -98,10 +116,36 @@ export function accountChanges(
       snapshotByAccount.set(snapshot.accountId, snapshot);
     }
   }
+  const transactionsByAccount = new Map<string, Transaction[]>();
+  for (const transaction of transactions) {
+    const accountTransactions = transactionsByAccount.get(transaction.accountId) ?? [];
+    accountTransactions.push(transaction);
+    transactionsByAccount.set(transaction.accountId, accountTransactions);
+  }
   return accounts
     .map((account): AccountChange => {
-      const start = snapshotByAccount.get(account.id)?.balance ?? null;
+      const startSnapshot = snapshotByAccount.get(account.id) ?? null;
+      const start = startSnapshot?.balance ?? null;
       const change = start === null ? null : account.currentBalance - start;
+      let moneyAdded: number | null = null;
+      let marketChange: number | null = null;
+      if (
+        startSnapshot &&
+        change !== null &&
+        (account.assetClass === "investment" || account.assetClass === "retirement")
+      ) {
+        const added = (transactionsByAccount.get(account.id) ?? [])
+          .filter(
+            (transaction) =>
+              !transaction.pending &&
+              transaction.date > startSnapshot.date &&
+              transaction.date <= today &&
+              MONEY_ADDED_TYPES.has(transaction.type),
+          )
+          .reduce((total, transaction) => total + transaction.amount, 0);
+        moneyAdded = roundCents(added);
+        marketChange = roundCents(change - moneyAdded);
+      }
       return {
         account,
         start,
@@ -109,6 +153,8 @@ export function accountChanges(
         change,
         pct: start === null || start === 0 ? null : (change ?? 0) / Math.abs(start),
         isNew: start === null,
+        moneyAdded,
+        marketChange,
       };
     })
     .sort(

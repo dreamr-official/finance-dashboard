@@ -254,9 +254,10 @@ export default async function OverviewPage() {
 
       <AccountChanges
         changes={{
-          day: accountChanges(accounts, snapshots, todayDate, 1),
-          week: accountChanges(accounts, snapshots, todayDate, 7),
-          month: accountChanges(accounts, snapshots, todayDate, 30),
+          day: accountChanges(accounts, snapshots, transactions, todayDate, 1),
+          week: accountChanges(accounts, snapshots, transactions, todayDate, 7),
+          month: accountChanges(accounts, snapshots, transactions, todayDate, 30),
+          year: accountChanges(accounts, snapshots, transactions, todayDate, 365),
         }}
         institutionNames={Object.fromEntries(institutions.map((institution) => [
           institution.id,

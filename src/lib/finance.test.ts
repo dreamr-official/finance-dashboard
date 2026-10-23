@@ -162,6 +162,7 @@ describe("signed net worth", () => {
         { accountId: "same", date: "2026-10-22", balance: 10 },
         { accountId: "new", date: "2026-10-23", balance: 40 },
       ],
+      [],
       "2026-10-23",
       1,
     );
@@ -185,6 +186,7 @@ describe("signed net worth", () => {
         { accountId: "card", date: "2026-10-22", balance: -550 },
         { accountId: "card", date: "2026-10-23", balance: -600 },
       ],
+      [],
       "2026-10-23",
       1,
     );
@@ -202,11 +204,151 @@ describe("signed net worth", () => {
     const [change] = accountChanges(
       [account("zero-start", 100)],
       [{ accountId: "zero-start", date: "2026-10-22", balance: 0 }],
+      [],
       "2026-10-23",
       1,
     );
 
     expect(change).toMatchObject({ start: 0, change: 100, pct: null, isNew: false });
+  });
+
+  it("splits deposit-only changes into money added with no market change", () => {
+    const [change] = accountChanges(
+      [account("investment", 1250, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [transaction("investment", "2026-10-17", 250, "deposit")],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ change: 250, moneyAdded: 250, marketChange: 0 });
+  });
+
+  it("splits pure market movement with no money added", () => {
+    const [change] = accountChanges(
+      [account("investment", 1100, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ change: 100, moneyAdded: 0, marketChange: 100 });
+  });
+
+  it("separates deposits from market movement in the same window", () => {
+    const [change] = accountChanges(
+      [account("investment", 1250, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [transaction("investment", "2026-10-18", 200, "deposit")],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ change: 250, moneyAdded: 200, marketChange: 50 });
+  });
+
+  it("does not count trades, dividends, interest, or fees as money added", () => {
+    const [change] = accountChanges(
+      [account("investment", 1125, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [
+        transaction("investment", "2026-10-17", -600, "buy"),
+        transaction("investment", "2026-10-18", 500, "sell"),
+        transaction("investment", "2026-10-19", 50, "dividend"),
+        transaction("investment", "2026-10-20", 15, "interest"),
+        transaction("investment", "2026-10-21", -10, "fee"),
+      ],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ moneyAdded: 0, marketChange: 125 });
+  });
+
+  it("counts supported boundary flows and rounds their sum to cents", () => {
+    const [change] = accountChanges(
+      [account("investment", 1065.3, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [
+        transaction("investment", "2026-10-17", 100, "deposit"),
+        transaction("investment", "2026-10-17", -50, "withdrawal"),
+        transaction("investment", "2026-10-18", 30, "transfer_in"),
+        transaction("investment", "2026-10-18", -20, "transfer_out"),
+        transaction("investment", "2026-10-19", 10, "income"),
+        transaction("investment", "2026-10-19", -5, "expense"),
+        transaction("investment", "2026-10-20", 0.1, "other"),
+        transaction("investment", "2026-10-21", 0.2, "other"),
+      ],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ moneyAdded: 65.3, marketChange: 0 });
+  });
+
+  it("starts the transaction window at the snapshot actually used, before the cutoff", () => {
+    const [change] = accountChanges(
+      [account("investment", 1300, "investment", "brokerage")],
+      [
+        { accountId: "investment", date: "2026-10-14", balance: 1000 },
+        { accountId: "investment", date: "2026-10-20", balance: 1200 },
+      ],
+      [
+        transaction("investment", "2026-10-14", 1000, "deposit"),
+        transaction("investment", "2026-10-15", 100, "deposit"),
+        transaction("investment", "2026-10-22", 50, "deposit"),
+        transaction("investment", "2026-10-24", 1000, "deposit"),
+      ],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({
+      start: 1000,
+      moneyAdded: 150,
+      marketChange: 150,
+    });
+  });
+
+  it("excludes pending investment transactions from money added", () => {
+    const pendingDeposit = {
+      ...transaction("investment", "2026-10-17", 250, "deposit"),
+      pending: true,
+    };
+    const [change] = accountChanges(
+      [account("investment", 1100, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [pendingDeposit],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ moneyAdded: 0, marketChange: 100 });
+  });
+
+  it("leaves split values null for cash accounts", () => {
+    const [change] = accountChanges(
+      [account("cash", 1100)],
+      [{ accountId: "cash", date: "2026-10-16", balance: 1000 }],
+      [transaction("cash", "2026-10-17", 100, "deposit")],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ isNew: false, moneyAdded: null, marketChange: null });
+  });
+
+  it("leaves split values null for new investment accounts", () => {
+    const [change] = accountChanges(
+      [account("new-investment", 1100, "investment", "brokerage")],
+      [{ accountId: "new-investment", date: "2026-10-23", balance: 1100 }],
+      [transaction("new-investment", "2026-10-22", 100, "deposit")],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ isNew: true, moneyAdded: null, marketChange: null });
   });
 
   it("reconciles account changes with header deltas when all accounts have history", () => {
@@ -234,7 +376,7 @@ describe("signed net worth", () => {
       ["week", 7],
       ["month", 30],
     ] as const) {
-      const total = accountChanges(accounts, snapshots, "2026-10-23", days).reduce(
+      const total = accountChanges(accounts, snapshots, [], "2026-10-23", days).reduce(
         (sum, entry) => sum + (entry.change ?? 0),
         0,
       );

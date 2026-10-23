@@ -152,6 +152,8 @@ const initialDemoTransactions: Transaction[] = [
   txn("a-bofa-chk", 51, "YouTube Premium", -13.99, "expense", { category: "Subscriptions" }),
   txn("a-bofa-chk", 63, "Netflix", -15.49, "expense", { category: "Subscriptions" }),
   txn("a-bofa-chk", 71, "Spotify", -11.99, "expense", { category: "Subscriptions" }),
+  txn("a-rh-brok", 3, "ACH Deposit — Robinhood", 250.0, "deposit"),
+  txn("a-rh-brok", 17, "ACH Deposit — Robinhood", 500.0, "deposit"),
   txn("a-stan-chk", 8, "Planet Fitness", -24.99, "expense", { category: "Subscriptions" }),
   txn("a-stan-chk", 38, "Planet Fitness", -24.99, "expense", { category: "Subscriptions" }),
   txn("a-stan-chk", 68, "Planet Fitness", -24.99, "expense", { category: "Subscriptions" }),
