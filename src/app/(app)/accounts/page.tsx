@@ -8,6 +8,7 @@ import Link from "next/link";
 import { isDemoMode, isPlaidConfigured } from "@/lib/env";
 import { ConnectBankButton, SyncNowButton } from "./plaid-connect";
 import { TransferButton } from "./transfer-dialog";
+import { ACCOUNT_TYPE_LABELS, sortAccountsByClass } from "@/lib/account-types";
 
 
 export default async function AccountsPage() {
@@ -16,11 +17,16 @@ export default async function AccountsPage() {
     getSessionUser(),
   ]);
   const isAdmin = user?.role === "admin";
-  const byInst = new Map<string, typeof accounts>();
-  for (const a of accounts) {
-    const arr = byInst.get(a.institutionId) ?? [];
-    arr.push(a);
-    byInst.set(a.institutionId, arr);
+  const institutionNames = new Map(institutions.map((institution) => [institution.id, institution.name]));
+  const accountGroups = new Map<string, { institutionId: string; accounts: typeof accounts }>();
+  for (const account of sortAccountsByClass(accounts, institutionNames)) {
+    const key = `${account.assetClass}:${account.institutionId}`;
+    const group = accountGroups.get(key) ?? {
+      institutionId: account.institutionId,
+      accounts: [],
+    };
+    group.accounts.push(account);
+    accountGroups.set(key, group);
   }
 
   return (
@@ -42,10 +48,10 @@ export default async function AccountsPage() {
           </div>
         )}
       </div>
-      {[...byInst.entries()].map(([instId, accts]) => {
+      {[...accountGroups.entries()].map(([key, { institutionId: instId, accounts: accts }]) => {
         const inst = institutions.find((i) => i.id === instId);
         return (
-          <Card key={instId}>
+          <Card key={key}>
             <CardHeader>
               <CardTitle className="flex min-w-0 items-center justify-between gap-2 text-base">
                 <span className="truncate">{inst?.name ?? "Manual"}</span>
@@ -65,7 +71,7 @@ export default async function AccountsPage() {
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{a.name}</div>
                         <div className="text-xs text-muted-foreground capitalize">
-                          {a.type.replace("_", " ")}
+                          {ACCOUNT_TYPE_LABELS[a.type]}
                           {a.mask ? ` ····${a.mask}` : ""}
                           {a.isManual ? " · manual" : ""}
                         </div>
@@ -77,7 +83,9 @@ export default async function AccountsPage() {
                             {fmtCurrency(a.currentBalance)}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {a.connectionStatus === "healthy"
+                            {a.isManual
+                              ? "Manual"
+                              : a.connectionStatus === "healthy"
                               ? "connected"
                               : a.connectionStatus === "needs_reauth"
                                 ? "reconnect needed"

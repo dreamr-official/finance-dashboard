@@ -48,8 +48,15 @@ describe("proxy authorization", () => {
   it("keeps prefix-like cron paths gated", async () => {
     authMocks.getUser.mockResolvedValue({ data: { user: null } });
     const response = await proxy(new NextRequest("http://localhost/api/cronx"));
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toContain("/login");
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
+  });
+
+  it("returns JSON 401 for unauthenticated protected API requests", async () => {
+    authMocks.getUser.mockResolvedValue({ data: { user: null } });
+    const response = await proxy(new NextRequest("http://localhost/api/private"));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
   });
 
   it("excludes root service worker and manifest paths from the matcher", () => {

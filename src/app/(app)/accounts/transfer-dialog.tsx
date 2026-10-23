@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Account } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { appToday } from "@/lib/dates";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -156,7 +157,7 @@ export function TransferButton({
                   id="transfer-date"
                   name="date"
                   type="date"
-                  defaultValue={new Date().toISOString().slice(0, 10)}
+                  defaultValue={appToday()}
                   required
                 />
               </div>

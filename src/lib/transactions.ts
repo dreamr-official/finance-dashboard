@@ -1,3 +1,24 @@
+import type { TransactionType } from "./types";
+
+export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
+  deposit: "Deposit",
+  withdrawal: "Withdrawal",
+  transfer_in: "Transfer in",
+  transfer_out: "Transfer out",
+  buy: "Buy",
+  sell: "Sell",
+  dividend: "Dividend",
+  interest: "Interest",
+  fee: "Fee",
+  expense: "Expense",
+  income: "Income",
+  other: "Other",
+};
+
+export function transactionCountLabel(count: number) {
+  return `${count.toLocaleString()} ${count === 1 ? "transaction" : "transactions"}`;
+}
+
 export function classifyType(name: string, amount: number): string {
   if (amount > 0 && /dividend/i.test(name)) return "dividend";
   if (amount > 0 && /interest/i.test(name)) return "interest";

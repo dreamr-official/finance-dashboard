@@ -1,14 +1,16 @@
 import { getDataset } from "@/lib/data/provider";
+import { appToday } from "@/lib/dates";
 import { rothContributions, DEFAULT_ROTH_LIMITS } from "@/lib/finance";
 import { classifyInvestmentFlows } from "@/lib/contributions";
 import type { ContributionEntry } from "@/lib/contributions";
+import { sortAccountsByClass } from "@/lib/account-types";
 import {
   capSlices,
   groupHoldingsByAssetType,
   groupHoldingsBySymbol,
   holdingsWithShare,
 } from "@/lib/holdings";
-import { fmtCompact, fmtCurrency, fmtShare } from "@/lib/format";
+import { fmtCompact, fmtCurrency, fmtDate, fmtShare } from "@/lib/format";
 import {
   Card,
   CardContent,
@@ -43,11 +45,15 @@ function contributionLabel(flow: ContributionEntry) {
 }
 
 export default async function InvestmentsPage() {
-  const TAX_YEAR = new Date().getUTCFullYear();
+  const TAX_YEAR = Number(appToday().slice(0, 4));
   const { accounts, institutions, transactions, holdings } = await getDataset();
   const rothAccounts = accounts.filter((account) => account.type === "roth_ira");
-  const investAccounts = accounts.filter(
+  const investmentAccounts = accounts.filter(
     (a) => a.assetClass === "investment" || a.assetClass === "retirement",
+  );
+  const investAccounts = sortAccountsByClass(
+    investmentAccounts,
+    new Map(institutions.map((institution) => [institution.id, institution.name])),
   );
   const investAccountIds = new Set(investAccounts.map((a) => a.id));
   const investHoldings = holdings.filter((holding) => investAccountIds.has(holding.accountId));
@@ -142,7 +148,7 @@ export default async function InvestmentsPage() {
       currentValue: account.currentBalance,
       totalDeposits: deposits,
       netContributions: accountFlows.reduce((sum, flow) => sum + flow.amount, 0),
-      contributionLog: accountFlows.slice(0, 8),
+      contributionLog: accountFlows,
     };
   });
   const roth = rothContributions(accounts, transactions, TAX_YEAR);
@@ -317,8 +323,10 @@ export default async function InvestmentsPage() {
               {rothLimit ? ` of ${fmtCurrency(rothLimit, { decimals: 0 })}` : ""}
             </span>
             {rothLimit && (
-              <span className="text-muted-foreground">
-                {fmtCurrency(Math.max(0, rothLimit - roth.deposits), { decimals: 0 })} remaining
+              <span className={roth.deposits > rothLimit ? "text-destructive" : "text-muted-foreground"}>
+                {roth.deposits > rothLimit
+                  ? `Over by ${fmtCurrency(roth.deposits - rothLimit, { decimals: 0 })}`
+                  : `${fmtCurrency(rothLimit - roth.deposits, { decimals: 0 })} remaining`}
               </span>
             )}
           </div>
@@ -387,19 +395,43 @@ export default async function InvestmentsPage() {
                     Contribution log
                   </div>
                   {s.contributionLog.length ? (
-                    s.contributionLog.map((flow) => (
+                    <>
+                    {s.contributionLog.slice(0, 8).map((flow) => (
                       <div
                         key={flow.transaction.id}
                         className="flex items-center justify-between gap-3 text-sm"
                       >
                         <span className="text-muted-foreground">
-                          {flow.transaction.date} · {contributionLabel(flow)}
+                          {fmtDate(flow.transaction.date)} · {contributionLabel(flow)}
                         </span>
                         <span className="shrink-0 tabular-nums">
                           {fmtCurrency(flow.amount, { sign: true })}
                         </span>
                       </div>
-                    ))
+                    ))}
+                    {s.contributionLog.length > 8 && (
+                      <details className="text-xs text-muted-foreground">
+                        <summary className="min-h-9 cursor-pointer py-2">
+                          Show all ({s.contributionLog.length})
+                        </summary>
+                        <div className="space-y-2">
+                          {s.contributionLog.slice(8).map((flow) => (
+                            <div
+                              key={flow.transaction.id}
+                              className="flex items-center justify-between gap-3 text-sm"
+                            >
+                              <span>
+                                {fmtDate(flow.transaction.date)} · {contributionLabel(flow)}
+                              </span>
+                              <span className="shrink-0 tabular-nums">
+                                {fmtCurrency(flow.amount, { sign: true })}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                    </>
                   ) : (
                     <p className="text-xs text-muted-foreground">No contribution activity yet.</p>
                   )}

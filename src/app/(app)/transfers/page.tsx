@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getDataset } from "@/lib/data/provider";
+import { appToday, shiftDate } from "@/lib/dates";
 import {
   buildTransferReport,
   MATCH_WINDOW_DAYS,
@@ -33,9 +34,7 @@ function dateParam(value: string | string[] | undefined, fallback: string) {
 }
 
 function isoDaysAgo(today: string, days: number) {
-  const date = new Date(`${today}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() - days);
-  return date.toISOString().slice(0, 10);
+  return shiftDate(today, -days);
 }
 
 export default async function TransfersPage({
@@ -47,7 +46,7 @@ export default async function TransfersPage({
     getDataset(),
     searchParams,
   ]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = appToday();
   const from = dateParam(params.from, isoDaysAgo(today, 365));
   const to = dateParam(params.to, today);
   const accountId =
@@ -313,7 +312,10 @@ function StatusBadge({
 
 function AccountLink({ account }: { account: Account }) {
   return (
-    <Link href={`/accounts/${account.id}`} className="min-w-0 truncate hover:underline">
+    <Link
+      href={`/accounts/${account.id}`}
+      className="inline-flex min-h-9 min-w-0 items-center truncate hover:underline"
+    >
       {account.name}
     </Link>
   );

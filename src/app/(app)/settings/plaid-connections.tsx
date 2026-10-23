@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { APP_TIMEZONE } from "@/lib/dates";
 import { usePlaidLink } from "react-plaid-link";
 import { Button } from "@/components/ui/button";
 
@@ -132,7 +133,7 @@ export function PlaidConnections({
               <div className="text-xs capitalize text-muted-foreground">
                 {connection.status}
                 {connection.lastSyncedAt
-                  ? ` · last synced ${new Date(connection.lastSyncedAt).toLocaleString()}`
+                  ? ` · last synced ${new Date(connection.lastSyncedAt).toLocaleString("en-US", { timeZone: APP_TIMEZONE })}`
                   : " · not synced yet"}
               </div>
               {connection.lastError && (

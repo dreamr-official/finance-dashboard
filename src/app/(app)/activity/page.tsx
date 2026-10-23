@@ -3,6 +3,7 @@ import { Fragment } from "react";
 import { getDataset } from "@/lib/data/provider";
 import { summarizeActivity } from "@/lib/activity";
 import { fmtCurrency } from "@/lib/format";
+import { TRANSACTION_TYPE_LABELS, transactionCountLabel } from "@/lib/transactions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -45,9 +46,9 @@ export default async function ActivityPage({
   const limit = parseLimit(params.limit);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const filtered = filterTransactions(transactions, filters);
-  const summary = summarizeActivity(filtered, accounts);
+  const summary = summarizeActivity(filtered, accounts, transactions);
   const visible = filtered.slice(0, limit);
-  const monthGroups = groupByMonth(visible, filtered);
+  const monthGroups = groupByMonth(visible, filtered, accounts, transactions);
   const currentParams = {
     account: filters.accountId,
     type: filters.type,
@@ -110,7 +111,7 @@ export default async function ActivityPage({
             <option value="">All types</option>
             {TYPE_OPTIONS.map((option) => (
               <option key={option} value={option}>
-                {option.replace("_", " ")}
+                {TRANSACTION_TYPE_LABELS[option as keyof typeof TRANSACTION_TYPE_LABELS]}
               </option>
             ))}
           </select>
@@ -201,7 +202,8 @@ export default async function ActivityPage({
 
       <section className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Showing {visible.length.toLocaleString()} of {filtered.length.toLocaleString()} transactions
+              Showing {visible.length.toLocaleString()} of {filtered.length.toLocaleString()}{" "}
+              {filtered.length === 1 ? "transaction" : "transactions"}
         </p>
         {visible.length ? (
           <>
@@ -212,7 +214,7 @@ export default async function ActivityPage({
                     <div className="flex min-w-0 items-baseline gap-2">
                       <h2 className="font-medium">{group.label}</h2>
                       <span className="text-xs text-muted-foreground">
-                        {group.count.toLocaleString()} transactions
+                        {transactionCountLabel(group.count)}
                       </span>
                     </div>
                     <p className="text-xs tabular-nums text-muted-foreground">
@@ -236,7 +238,7 @@ export default async function ActivityPage({
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
                           <Badge variant={transaction.type === "deposit" ? "default" : "outline"}>
-                            {transaction.type.replace("_", " ")}
+                            {TRANSACTION_TYPE_LABELS[transaction.type]}
                           </Badge>
                           <span className="truncate text-xs text-muted-foreground">
                             {transaction.category || "Uncategorized"}
@@ -269,7 +271,7 @@ export default async function ActivityPage({
                             <div className="flex items-baseline gap-2">
                               <span className="font-medium">{group.label}</span>
                               <span className="text-xs text-muted-foreground">
-                                {group.count.toLocaleString()} transactions
+                                {transactionCountLabel(group.count)}
                               </span>
                             </div>
                             <span className="text-xs tabular-nums text-muted-foreground">
@@ -286,7 +288,7 @@ export default async function ActivityPage({
                           </td>
                           <td className="max-w-64 truncate px-3 py-2">{transaction.name}</td>
                           <td className="whitespace-nowrap px-3 py-2 capitalize">
-                            {transaction.type.replace("_", " ")}
+                            {TRANSACTION_TYPE_LABELS[transaction.type]}
                           </td>
                           <td className="px-3 py-2">{transaction.category || "Uncategorized"}</td>
                           <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">

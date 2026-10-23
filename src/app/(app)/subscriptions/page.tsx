@@ -2,6 +2,7 @@ import { getDataset } from "@/lib/data/provider";
 import { getSessionUser } from "@/lib/auth";
 import { monthlyEquivalent } from "@/lib/finance";
 import { SubscriptionsClient } from "./subscriptions-client";
+import { fmtCurrency } from "@/lib/format";
 
 
 export default async function SubscriptionsPage() {
@@ -20,7 +21,7 @@ export default async function SubscriptionsPage() {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Subscriptions</h1>
         <div className="text-sm text-muted-foreground">
-          ${monthly.toFixed(2)}/mo · ${annual.toFixed(0)}/yr
+          {fmtCurrency(monthly)}/mo · {fmtCurrency(annual)}/yr
         </div>
       </div>
       <SubscriptionsClient

@@ -10,8 +10,17 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { fmtChartTick, fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
+import { fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import {
+  chartSpanDays,
+  chartTicks,
+  chartTimeDomain,
+  formatChartTime,
+  paddedAmountDomain,
+  withChartTime,
+} from "@/lib/chart-data";
+import { shiftDate } from "@/lib/dates";
 
 const RANGES = [
   { key: "1M", days: 30 },
@@ -32,19 +41,14 @@ export function NetWorthChart({
     if (r.days === Infinity) return data;
     const lastDate = data[data.length - 1]?.date;
     if (!lastDate) return data;
-    const cutoff = new Date(`${lastDate}T00:00:00.000Z`);
-    cutoff.setUTCDate(cutoff.getUTCDate() - r.days);
-    const cutoffDate = cutoff.toISOString().slice(0, 10);
+    const cutoffDate = shiftDate(lastDate, -r.days);
     return data.filter((point) => point.date >= cutoffDate);
   }, [data, range]);
-  const firstDate = filtered[0]?.date;
-  const lastDate = filtered[filtered.length - 1]?.date;
-  const spanDays =
-    firstDate && lastDate
-      ? (Date.parse(`${lastDate}T00:00:00.000Z`) -
-          Date.parse(`${firstDate}T00:00:00.000Z`)) /
-        86400000
-      : 0;
+  const chartData = withChartTime(filtered);
+  const spanDays = chartSpanDays(chartData);
+  const ticks = chartTicks(chartData);
+  const dateByTime = new Map(chartData.map((point) => [point.t, point.date]));
+  const domain = paddedAmountDomain(chartData.map((point) => point.value));
 
   return (
     <div>
@@ -54,7 +58,7 @@ export function NetWorthChart({
             key={r.key}
             onClick={() => setRange(r.key)}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              "min-h-9 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
               range === r.key
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-accent",
@@ -66,7 +70,7 @@ export function NetWorthChart({
       </div>
       <div className="h-72 w-full">
         <ResponsiveContainer>
-          <AreaChart data={filtered} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+          <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
             <defs>
               <linearGradient id="nw" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--color-chart-1, #10b981)" stopOpacity={0.25} />
@@ -75,8 +79,12 @@ export function NetWorthChart({
             </defs>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
             <XAxis
-              dataKey="date"
-              tickFormatter={(value) => fmtChartTick(String(value), spanDays)}
+              dataKey="t"
+              type="number"
+              scale="time"
+              domain={chartTimeDomain(chartData)}
+              ticks={ticks}
+              tickFormatter={(value) => formatChartTime(Number(value), spanDays)}
               tick={{ fontSize: 11 }}
               className="text-muted-foreground"
               minTickGap={48}
@@ -90,11 +98,16 @@ export function NetWorthChart({
               className="text-muted-foreground"
               axisLine={false}
               tickLine={false}
-              domain={["dataMin", "dataMax"]}
+              domain={domain}
             />
             <Tooltip
               formatter={(v) => [fmtCurrency(Number(v)), "Net worth"]}
-              labelFormatter={(v) => fmtDate(String(v))}
+              labelFormatter={(value) =>
+                fmtDate(
+                  dateByTime.get(Number(value)) ??
+                    new Date(Number(value)).toISOString().slice(0, 10),
+                )
+              }
               contentStyle={{
                 borderRadius: 8,
                 border: "1px solid var(--border)",
@@ -103,12 +116,13 @@ export function NetWorthChart({
               }}
             />
             <Area
-              type="monotone"
+              type="linear"
               dataKey="value"
               stroke="var(--color-chart-1, #10b981)"
               strokeWidth={2}
               fill="url(#nw)"
               isAnimationActive={false}
+              dot={chartData.length === 1}
             />
           </AreaChart>
         </ResponsiveContainer>

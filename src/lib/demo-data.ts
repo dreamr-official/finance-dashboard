@@ -7,10 +7,13 @@ import {
   Transaction,
   TransactionType,
 } from "./types";
+import { appToday, shiftDate } from "./dates";
 
 const DAY = 86400000;
 const today = new Date();
-const d = (daysAgo: number) => new Date(today.getTime() - daysAgo * DAY).toISOString().slice(0, 10);
+const todayDate = appToday(today);
+const todayUtc = new Date(`${todayDate}T00:00:00.000Z`);
+const d = (daysAgo: number) => shiftDate(todayDate, -daysAgo);
 
 // deterministic pseudo-random walk
 function walk(seed: number, i: number) {
@@ -57,6 +60,7 @@ function acct(
 export const demoAccounts: Account[] = [
   acct("a-bofa-chk", "inst-bofa", "BofA Checking", "checking", "cash", 6240.18, { mask: "4412" }),
   acct("a-bofa-sav", "inst-bofa", "BofA Savings", "savings", "cash", 12050.0, { mask: "8841" }),
+  acct("a-bofa-cc", "inst-bofa", "BofA Customized Cash Rewards Visa", "credit_card", "liability", -640.0, { mask: "1907" }),
   acct("a-stan-chk", "inst-stanford", "Stanford FCU Checking", "checking", "cash", 3120.44, {
     mask: "1029",
     isManual: true,
@@ -83,7 +87,14 @@ export const demoSnapshots: BalanceSnapshot[] = demoAccounts.flatMap((a, ai) => 
     const t = 1 - i / 545;
     const trend = start + (a.currentBalance - start) * t;
     const noise = a.assetClass === "cash" ? Math.sin(i / 9 + ai) * 400 : trend * 0.015 * walk(ai + 1, i);
-    snaps.push({ accountId: a.id, date: d(i), balance: Math.max(0, trend + noise) });
+    snaps.push({
+      accountId: a.id,
+      date: d(i),
+      balance:
+        a.assetClass === "liability"
+          ? Math.min(0, trend + noise)
+          : Math.max(0, trend + noise),
+    });
   }
   return snaps;
 });
@@ -108,11 +119,13 @@ function transferPair(
   name: string,
 ): Transaction[] {
   const pairId = `pair-${txnSeq}`;
+  const fromName = demoAccounts.find((account) => account.id === fromId)?.name ?? name;
+  const toName = demoAccounts.find((account) => account.id === toId)?.name ?? name;
   return [
-    txn(fromId, daysAgo, `Transfer to ${name}`, -amount, "transfer_out", {
+    txn(fromId, daysAgo, `Transfer to ${toName}`, -amount, "transfer_out", {
       transferPairId: pairId,
     }),
-    txn(toId, daysAgo, `Transfer from ${name}`, amount, "transfer_in", {
+    txn(toId, daysAgo, `Transfer from ${fromName}`, amount, "transfer_in", {
       transferPairId: pairId,
     }),
   ];
@@ -208,10 +221,14 @@ const initialDemoTransactions: Transaction[] = [
   ),
   txn("a-bofa-chk", 46, "Online Banking transfer to Schwab", -750.0, "transfer_out"),
   txn("a-bofa-chk", 1, "Transfer to Happen HYSA", -500.0, "transfer_out", { pending: true }),
+  txn("a-bofa-cc", 2, "Grocery purchase", -240.0, "expense", { category: "Groceries" }),
+  txn("a-bofa-cc", 5, "Home supplies", -300.0, "expense", { category: "Shopping" }),
+  txn("a-bofa-cc", 8, "Travel purchase", -400.0, "expense", { category: "Travel" }),
+  ...transferPair("a-bofa-chk", "a-bofa-cc", 14, 300, "BofA credit card payment"),
 ];
 
 function daysAgoForDate(date: string): number {
-  const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  const todayDate = new Date(`${appToday(today)}T00:00:00.000Z`);
   return Math.round(
     (todayDate.getTime() - new Date(`${date}T00:00:00.000Z`).getTime()) / DAY,
   );
@@ -252,7 +269,7 @@ const recurringTransactions: Transaction[] = (() => {
   }
   for (let monthsAgo = 17; monthsAgo >= 0; monthsAgo -= 1) {
     const date = new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - monthsAgo, 1),
+      Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth() - monthsAgo, 1),
     )
       .toISOString()
       .slice(0, 10);
@@ -270,7 +287,7 @@ const recurringTransactions: Transaction[] = (() => {
     );
   }
 
-  const currentDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  const currentDate = new Date(`${appToday(today)}T00:00:00.000Z`);
   for (
     let date = new Date(Date.UTC(2026, 0, 15)), index = 0;
     date <= currentDate;
@@ -283,6 +300,12 @@ const recurringTransactions: Transaction[] = (() => {
         "Roth IRA monthly contribution",
         500,
         "deposit",
+        {
+          taxYear:
+            date.toISOString().slice(5, 10) <= "04-15"
+              ? date.getUTCFullYear() - 1
+              : date.getUTCFullYear(),
+        },
       ),
       txn(
         "a-bofa-chk",
@@ -304,7 +327,7 @@ export const demoTransactions: Transaction[] = [
 export const demoHoldings: Holding[] = [
   { id: "h1", accountId: "a-fid-brok", symbol: "VTI", name: "Vanguard Total Stock", quantity: 42.1, price: 292.4, value: 12310.0, costBasis: 11200.0, assetType: "etf" },
   { id: "h2", accountId: "a-fid-brok", symbol: "VOO", name: "Vanguard S&P 500", quantity: 18.2, price: 545.1, value: 9921.0, costBasis: 9100.0, assetType: "etf" },
-  { id: "h3", accountId: "a-fid-brok", symbol: "SPAXX", name: "Fidelity Cash", quantity: 1, price: 1, value: 1310.9, assetType: "cash" },
+  { id: "h3", accountId: "a-fid-brok", symbol: "SPAXX", name: "Fidelity Cash", quantity: 1310.9, price: 1, value: 1310.9, assetType: "cash" },
   { id: "h4", accountId: "a-fid-roth", symbol: "FXAIX", name: "Fidelity 500 Index", quantity: 88.4, price: 206.2, value: 18233.15, costBasis: 16000.0, assetType: "mutual_fund" },
   { id: "h5", accountId: "a-fid-401k", symbol: "FXAIX", name: "Fidelity 500 Index", quantity: 160.2, price: 206.2, value: 33033.24, assetType: "mutual_fund" },
   { id: "h6", accountId: "a-fid-401k", symbol: "FXNAX", name: "Fidelity Bond Index", quantity: 720, price: 11.33, value: 8175.53, assetType: "mutual_fund" },

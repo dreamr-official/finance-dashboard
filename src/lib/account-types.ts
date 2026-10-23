@@ -29,6 +29,31 @@ export const ACCOUNT_TYPE_OPTIONS: { value: AccountType; label: string }[] = [
   { value: "loan", label: "Loan" },
   { value: "other", label: "Other" },
 ];
+export const ACCOUNT_TYPE_LABELS = Object.fromEntries(
+  ACCOUNT_TYPE_OPTIONS.map(({ value, label }) => [value, label]),
+) as Record<AccountType, string>;
+
+const ASSET_CLASS_SORT_ORDER: Record<AssetClass, number> = {
+  cash: 0,
+  investment: 1,
+  retirement: 2,
+  other: 3,
+  liability: 4,
+};
+
+export function sortAccountsByClass(
+  accounts: Account[],
+  institutionNames: Map<string, string>,
+) {
+  return [...accounts].sort(
+    (a, b) =>
+      ASSET_CLASS_SORT_ORDER[a.assetClass] - ASSET_CLASS_SORT_ORDER[b.assetClass] ||
+      (institutionNames.get(a.institutionId) ?? "").localeCompare(
+        institutionNames.get(b.institutionId) ?? "",
+      ) ||
+      a.name.localeCompare(b.name),
+  );
+}
 
 export function deriveAccountTypeUpdate(
   account: Pick<Account, "type" | "assetClass" | "currentBalance">,

@@ -40,7 +40,7 @@ export function AccountChanges({
               key={item.key}
               type="button"
               onClick={() => setPeriod(item.key)}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`min-h-9 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                 period === item.key
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent"

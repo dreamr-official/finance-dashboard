@@ -1,4 +1,5 @@
 import { getDataset } from "@/lib/data/provider";
+import { APP_TIMEZONE, appToday, shiftDate } from "@/lib/dates";
 import {
   accountChanges,
   applyNetWorthChange,
@@ -7,6 +8,7 @@ import {
   netWorthSeries,
 } from "@/lib/finance";
 import { assetClassSlices } from "@/lib/holdings";
+import { sortAccountsByClass } from "@/lib/account-types";
 import { fmtCompact, fmtCurrency, fmtDate, fmtShare } from "@/lib/format";
 import { NetWorthChart } from "@/components/net-worth-chart";
 import { AccountChanges } from "@/components/account-changes";
@@ -25,12 +27,10 @@ import {
 
 export default async function OverviewPage() {
   const { accounts, institutions, snapshots, subscriptions, transactions } = await getDataset();
-  const today = new Date();
-  const todayDate = today.toISOString().slice(0, 10);
+  const todayDate = appToday();
+  const today = new Date(`${todayDate}T12:00:00.000Z`);
   const upcomingSubscriptions = getUpcomingSubscriptions(subscriptions, today, 14);
-  const cutoff = new Date(today);
-  cutoff.setUTCDate(cutoff.getUTCDate() - 60);
-  const cutoffDate = cutoff.toISOString().slice(0, 10);
+  const cutoffDate = shiftDate(todayDate, -60);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const recentIncome = transactions
     .filter(
@@ -45,7 +45,7 @@ export default async function OverviewPage() {
   const series = netWorthSeries(accounts, snapshots, todayDate);
   const summary = applyNetWorthChange(computeNetWorth(accounts), series);
   const instById = Object.fromEntries(institutions.map((i) => [i.id, i]));
-  const liabilityAccounts = accounts.filter((account) => account.assetClass === "liability");
+  const liabilityAccounts = accounts.filter(isLiability);
   const assetSlices = assetClassSlices(accounts);
   const groups = [
     { key: "cash", label: "Cash" },
@@ -78,7 +78,7 @@ export default async function OverviewPage() {
         <Link href="#liabilities" className="block">
           <StatCard
             title="Liabilities"
-            value={fmtCompact(summary.liabilities)}
+            value={fmtCurrency(summary.liabilities, { decimals: 0 })}
             sub="Credit cards & loans"
           />
         </Link>
@@ -101,7 +101,9 @@ export default async function OverviewPage() {
               />
             </div>
             <div className="min-w-0 space-y-4">
-              {groups.map((group) => {
+              {groups
+                .filter((group) => group.key !== "other" || group.amount !== 0)
+                .map((group) => {
                 const colorIndex = assetSlices.findIndex((slice) => slice.key === group.key);
                 const color = colorIndex >= 0 ? chartColor(colorIndex).fill : undefined;
                 return (
@@ -145,7 +147,7 @@ export default async function OverviewPage() {
           <div id="liabilities" className="flex items-center justify-between border-t pt-3 text-sm">
             <span className="text-muted-foreground">Liabilities</span>
             <span className="font-medium tabular-nums text-red-600 dark:text-red-400">
-              {fmtCurrency(-Math.abs(summary.liabilities), { decimals: 0 })}
+              {fmtCurrency(summary.liabilities, { decimals: 0 })}
             </span>
           </div>
           {liabilityAccounts.length ? (
@@ -165,7 +167,7 @@ export default async function OverviewPage() {
                       )}
                     </span>
                     <span className="shrink-0 text-sm font-medium tabular-nums text-red-600 dark:text-red-400">
-                      {fmtCurrency(account.currentBalance, { decimals: 0 })}
+                      {fmtCurrency(-account.currentBalance, { decimals: 0 })}
                     </span>
                   </Link>
                 </li>
@@ -245,7 +247,7 @@ export default async function OverviewPage() {
         <CardContent>
           <NetWorthChart data={series} />
           <p className="mt-2 text-xs text-muted-foreground">
-            Accounts without history are shown at their earliest known balance.
+            Accounts without history are shown at their first recorded (or current) balance.
           </p>
         </CardContent>
       </Card>
@@ -268,7 +270,10 @@ export default async function OverviewPage() {
         </CardHeader>
         <CardContent className="p-0">
           <ul className="divide-y">
-            {accounts.map((a) => (
+            {sortAccountsByClass(
+              accounts,
+              new Map(institutions.map((institution) => [institution.id, institution.name])),
+            ).map((a) => (
               <li key={a.id}>
                 <Link
                   href={`/accounts/${a.id}`}
@@ -279,9 +284,11 @@ export default async function OverviewPage() {
                     <div className="text-xs text-muted-foreground">
                       {instById[a.institutionId]?.name}
                       {a.mask ? ` ····${a.mask}` : ""} ·{" "}
-                      {a.lastSyncedAt
-                        ? `synced ${new Date(a.lastSyncedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-                        : "never synced"}
+                      {a.isManual
+                        ? "Manual"
+                        : a.lastSyncedAt
+                          ? `synced ${new Date(a.lastSyncedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: APP_TIMEZONE })}`
+                          : "never synced"}
                       {a.connectionStatus === "needs_reauth" && (
                         <span className="ml-2 text-amber-600">reconnect needed</span>
                       )}

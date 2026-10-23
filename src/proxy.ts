@@ -67,6 +67,9 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!user && !isPublic) {
+    if (pathname.startsWith("/api/")) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.search = "";

@@ -1,8 +1,11 @@
 import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
+import { rebuildAccountHistory } from "@/lib/backfill";
 import { parseCsv } from "@/lib/csv-import";
 import { chunk } from "@/lib/transaction-list";
 import { z } from "zod";
+import { appToday } from "@/lib/dates";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const schema = z.object({
   csv: z.string().min(1).max(2_000_000),
@@ -28,7 +31,7 @@ export async function POST(
   }
   const { rows, skipped, skippedReasons } = parseCsv(body.data.csv);
   if (!rows.length) {
-    return Response.json({ imported: 0, skipped, skippedReasons });
+    return Response.json({ inserted: 0, updated: 0, unchanged: 0, skipped, skippedReasons });
   }
 
   const { createClient } = await import("@/lib/supabase/server");
@@ -39,7 +42,7 @@ export async function POST(
     .select("id,current_balance,is_manual")
     .eq("id", id)
     .maybeSingle();
-  if (acctErr) return Response.json({ error: acctErr.message }, { status: 500 });
+  if (acctErr) return apiErrorResponse(acctErr);
   if (!acct) return Response.json({ error: "Account not found" }, { status: 404 });
   if (!acct.is_manual) {
     return Response.json({ error: "CSV imports are only available for manual accounts" }, { status: 400 });
@@ -51,22 +54,42 @@ export async function POST(
     amount: number;
     type: string;
     type_overridden: boolean;
+    date: string;
+    name: string;
   }>();
-  for (const idBatch of chunk(providerTxnIds, 200)) {
+  for (const idBatch of chunk(providerTxnIds, 50)) {
     const { data: existingRows, error: existingError } = await supabase
       .from("transactions")
-      .select("provider_txn_id,amount,type,type_overridden")
+      .select("provider_txn_id,amount,type,type_overridden,date,name")
       .eq("account_id", id)
       .in("provider_txn_id", idBatch);
     if (existingError) {
-      return Response.json({ error: existingError.message }, { status: 500 });
+      return apiErrorResponse(existingError);
     }
     for (const row of existingRows ?? []) {
       if (row.provider_txn_id) existingById.set(row.provider_txn_id, row);
     }
   }
+  let inserted = 0;
+  let updated = 0;
+  let unchanged = 0;
   const delta = rows.reduce((sum, row) => {
     const existing = existingById.get(row.provider_txn_id);
+    if (!existing) {
+      inserted += 1;
+    } else {
+      const effectiveType = existing.type_overridden ? existing.type : row.type;
+      if (
+        Number(existing.amount) === row.amount &&
+        existing.type === effectiveType &&
+        existing.date === row.date &&
+        existing.name === row.name
+      ) {
+        unchanged += 1;
+      } else {
+        updated += 1;
+      }
+    }
     return sum + row.amount - (existing ? Number(existing.amount) : 0);
   }, 0);
   const upsertRows = rows.map((row) => {
@@ -83,7 +106,7 @@ export async function POST(
     const { error: upErr } = await supabase
       .from("transactions")
       .upsert(rowBatch, { onConflict: "account_id,provider_txn_id" });
-    if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
+    if (upErr) return apiErrorResponse(upErr);
   }
 
   const balance = Number(acct.current_balance) + delta;
@@ -91,12 +114,13 @@ export async function POST(
     .from("accounts")
     .update({ current_balance: balance })
     .eq("id", id);
-  if (balanceError) return Response.json({ error: balanceError.message }, { status: 500 });
-  const today = new Date().toISOString().slice(0, 10);
+  if (balanceError) return apiErrorResponse(balanceError);
+  const today = appToday();
   const { error: snapshotError } = await supabase
     .from("balance_snapshots")
-    .upsert({ account_id: id, date: today, balance });
-  if (snapshotError) return Response.json({ error: snapshotError.message }, { status: 500 });
+    .upsert({ account_id: id, date: today, balance, source: "manual" });
+  if (snapshotError) return apiErrorResponse(snapshotError);
+  await rebuildAccountHistory(supabase, id);
 
-  return Response.json({ imported: rows.length, skipped, skippedReasons });
+  return Response.json({ inserted, updated, unchanged, skipped, skippedReasons });
 }

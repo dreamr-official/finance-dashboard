@@ -1,15 +1,19 @@
 import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
+import { rebuildAccountHistory } from "@/lib/backfill";
 import { buildTransferLegs } from "@/lib/transfers";
 import { randomUUID } from "crypto";
 import { z } from "zod";
+import { appToday, shiftDate } from "@/lib/dates";
+import { isoDate } from "@/lib/validation";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const schema = z
   .object({
     from_account_id: z.string().uuid(),
     to_account_id: z.string().uuid(),
     amount: z.number().positive(),
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    date: isoDate,
     note: z.string().max(200).optional(),
   })
   .refine((data) => data.from_account_id !== data.to_account_id, {
@@ -26,9 +30,16 @@ export async function POST(request: Request) {
   if (isDemoMode()) {
     return Response.json({ error: "Mutations require Supabase" }, { status: 501 });
   }
-  const body = schema.safeParse(await request.json());
+  const body = schema.safeParse(await request.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
+  }
+  const today = appToday();
+  if (body.data.date > shiftDate(today, 7)) {
+    return Response.json(
+      { error: "Transfer date cannot be more than 7 days in the future." },
+      { status: 400 },
+    );
   }
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
@@ -37,7 +48,7 @@ export async function POST(request: Request) {
     .from("accounts")
     .select("id,current_balance,is_manual")
     .in("id", accountIds);
-  if (accountsError) return Response.json({ error: accountsError.message }, { status: 500 });
+  if (accountsError) return apiErrorResponse(accountsError);
   if (accounts?.length !== 2) {
     return Response.json({ error: "Account not found" }, { status: 404 });
   }
@@ -63,10 +74,9 @@ export async function POST(request: Request) {
     .insert(legs)
     .select();
   if (transactionError) {
-    return Response.json({ error: transactionError.message }, { status: 500 });
+    return apiErrorResponse(transactionError);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   for (const account of accounts) {
     if (!account.is_manual) continue;
     const delta = legs
@@ -78,14 +88,17 @@ export async function POST(request: Request) {
       .update({ current_balance: balance })
       .eq("id", account.id);
     if (updateError) {
-      return Response.json({ error: updateError.message }, { status: 500 });
+      return apiErrorResponse(updateError);
     }
     const { error: snapshotError } = await supabase
       .from("balance_snapshots")
-      .upsert({ account_id: account.id, date: today, balance });
+      .upsert({ account_id: account.id, date: today, balance, source: "manual" });
     if (snapshotError) {
-      return Response.json({ error: snapshotError.message }, { status: 500 });
+      return apiErrorResponse(snapshotError);
     }
+  }
+  for (const accountId of accountIds) {
+    await rebuildAccountHistory(supabase, accountId);
   }
   return Response.json({ transactions, transfer_pair_id: pairId }, { status: 201 });
 }

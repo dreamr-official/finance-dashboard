@@ -1,4 +1,5 @@
-import type { Transaction } from "./types";
+import type { Account, Transaction } from "./types";
+import { isActivityCashFlow, matchedActivityTransferIds } from "./activity";
 
 export const PAGE_STEP = 100;
 
@@ -93,8 +94,11 @@ export function filterTransactions(
 export function groupByMonth(
   visible: Transaction[],
   all: Transaction[],
+  accounts: Account[] = [],
+  transferTransactions = all,
 ): TransactionMonthGroup[] {
   const groups = new Map<string, TransactionMonthGroup>();
+  const matched = matchedActivityTransferIds(transferTransactions, accounts);
   for (const transaction of visible) {
     const month = transaction.date.slice(0, 7);
     if (!groups.has(month)) {
@@ -118,15 +122,19 @@ export function groupByMonth(
     const group = groups.get(transaction.date.slice(0, 7));
     if (!group) continue;
     group.count += 1;
-    if (transaction.amount > 0 && transaction.type !== "transfer_in") {
+    if (isActivityCashFlow(transaction, matched) && transaction.amount > 0) {
       group.moneyIn += transaction.amount;
     }
-    if (transaction.amount < 0 && transaction.type !== "transfer_out") {
+    if (isActivityCashFlow(transaction, matched) && transaction.amount < 0) {
       group.moneyOut += Math.abs(transaction.amount);
     }
   }
 
-  return [...groups.values()];
+  return [...groups.values()].map((group) => ({
+    ...group,
+    moneyIn: Math.round(group.moneyIn * 100) / 100,
+    moneyOut: Math.round(group.moneyOut * 100) / 100,
+  }));
 }
 
 export function withParams(

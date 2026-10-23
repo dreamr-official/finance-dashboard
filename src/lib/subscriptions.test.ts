@@ -6,6 +6,7 @@ import {
   getUpcomingSubscriptions,
   isSubscriptionDatePredicted,
 } from "./subscriptions";
+import { appToday } from "./dates";
 
 function subscription(
   overrides: Partial<Subscription> = {},
@@ -52,5 +53,18 @@ describe("subscription date roll-forward", () => {
       .toBe("2026-10-20");
     expect(getUpcomingSubscriptions([sub], new Date("2026-10-23T12:00:00Z"), 30))
       .toEqual([]);
+  });
+
+  it("keeps a due-today payment on the app-local day after UTC midnight", () => {
+    const now = new Date("2026-10-24T01:30:00.000Z");
+    const sub = subscription({
+      nextExpectedDate: "2026-10-23",
+      remindDaysBefore: 0,
+    });
+
+    expect(appToday(now)).toBe("2026-10-23");
+    expect(getSubscriptionNextPaymentDate(sub, now)).toBe("2026-10-23");
+    expect(getUpcomingSubscriptions([sub], now, 0)).toEqual([sub]);
+    expect(getSubscriptionsToRemind([sub], now)).toEqual([sub]);
   });
 });

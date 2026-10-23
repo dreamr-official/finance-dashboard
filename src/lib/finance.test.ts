@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { summarizeActivity } from "./activity";
+import { groupByMonth } from "./transaction-list";
+import { demoDataset } from "./demo-data";
 import { classifyType, normalizeTransactionAmount } from "./transactions";
 import { buildTransferLegs } from "./transfers";
 import { convertPlaidTransaction, plaidAccountType } from "./integrations/plaid";
@@ -63,8 +65,8 @@ describe("signed net worth", () => {
 
     expect(summary).toMatchObject({
       netWorth: 200,
-      assets: 280,
-      liabilities: 80,
+      assets: 300,
+      liabilities: 100,
       cash: 80,
       investments: 200,
     });
@@ -438,7 +440,15 @@ describe("summarizeActivity", () => {
     expect(summarizeActivity(transactions, accounts)).toEqual({
       moneyIn: 240,
       moneyOut: 25,
-      contributions: 200,
+      contributions: 250,
     });
+  });
+
+  it("keeps Activity summary totals equal to the visible month totals on demo data", () => {
+    const { accounts, transactions } = demoDataset;
+    const summary = summarizeActivity(transactions, accounts, transactions);
+    const groups = groupByMonth(transactions, transactions, accounts, transactions);
+    expect(groups.reduce((sum, group) => sum + group.moneyIn, 0)).toBeCloseTo(summary.moneyIn, 2);
+    expect(groups.reduce((sum, group) => sum + group.moneyOut, 0)).toBeCloseTo(summary.moneyOut, 2);
   });
 });

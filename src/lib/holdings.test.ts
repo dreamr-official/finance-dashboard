@@ -259,4 +259,14 @@ describe("assetClassSlices", () => {
       },
     ]);
   });
+
+  it("keeps positive asset shares at 100% when negative balances are liabilities", () => {
+    const slices = assetClassSlices([
+      account({ id: "cash", assetClass: "cash", currentBalance: 100 }),
+      account({ id: "negative-cash", assetClass: "cash", currentBalance: -25 }),
+      account({ id: "investment", assetClass: "investment", currentBalance: 300 }),
+    ]);
+    expect(slices.reduce((sum, slice) => sum + slice.pct, 0)).toBeCloseTo(100);
+    expect(slices.map((slice) => slice.key)).toEqual(["investment", "cash"]);
+  });
 });

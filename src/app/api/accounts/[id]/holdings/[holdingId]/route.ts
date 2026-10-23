@@ -2,6 +2,7 @@ import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
 import { holdingPatchSchema, toHoldingUpdate } from "@/lib/manual-holdings";
 import { holdingWriteError, loadManualInvestmentAccount } from "../shared";
+import { apiErrorResponse } from "@/lib/api-error";
 
 type Context = { params: Promise<{ id: string; holdingId: string }> };
 
@@ -29,7 +30,7 @@ async function loadHolding(id: string, holdingId: string) {
     .eq("account_id", id)
     .single();
   if (error && error.code !== "PGRST116") {
-    return { error: Response.json({ error: error.message }, { status: 500 }) };
+    return { error: apiErrorResponse(error) };
   }
   if (!holding) {
     return { error: Response.json({ error: "Holding not found" }, { status: 404 }) };
@@ -77,6 +78,6 @@ export async function DELETE(_req: Request, { params }: Context) {
     .delete()
     .eq("id", holdingId)
     .eq("account_id", id);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return holdingWriteError(error);
   return new Response(null, { status: 204 });
 }

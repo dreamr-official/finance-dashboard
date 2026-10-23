@@ -2,6 +2,8 @@ import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
 import { deriveAccountTypeUpdate } from "@/lib/account-types";
 import { z } from "zod";
+import { appToday } from "@/lib/dates";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const patchSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -40,7 +42,7 @@ export async function PATCH(
     .select("is_manual,type,asset_class,current_balance")
     .eq("id", id)
     .maybeSingle();
-  if (accountError) return Response.json({ error: accountError.message }, { status: 500 });
+  if (accountError) return apiErrorResponse(accountError);
   if (!account) return Response.json({ error: "Account not found" }, { status: 404 });
   if (!account.is_manual && body.data.current_balance !== undefined) {
     return Response.json({ error: "Bank-synced balances cannot be edited" }, { status: 400 });
@@ -54,16 +56,17 @@ export async function PATCH(
     body.data,
   );
   const { error } = await supabase.from("accounts").update(update).eq("id", id);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error);
   if (update.current_balance !== undefined) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = appToday();
     const { error: snapshotError } = await supabase.from("balance_snapshots").upsert({
       account_id: id,
       date: today,
       balance: update.current_balance,
+      source: "manual",
     });
     if (snapshotError) {
-      return Response.json({ error: snapshotError.message }, { status: 500 });
+      return apiErrorResponse(snapshotError);
     }
   }
   return Response.json({ ok: true });
@@ -85,7 +88,13 @@ export async function DELETE(
   const { id } = await params;
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
-  const { error } = await supabase.from("accounts").delete().eq("id", id);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  const { data, error } = await supabase
+    .from("accounts")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  if (error) return apiErrorResponse(error);
+  if (!data) return Response.json({ error: "Account not found" }, { status: 404 });
   return new Response(null, { status: 204 });
 }
