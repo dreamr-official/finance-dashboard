@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { appToday } from "@/lib/dates";
-import type { Account, Subscription } from "@/lib/types";
+import type { Account, BillingFrequency, Subscription } from "@/lib/types";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 import {
   getSubscriptionNextPaymentDate,
@@ -43,7 +43,18 @@ import { getResponseError } from "@/lib/client-api";
 
 type SortKey = "date" | "cost" | "name";
 
-const FREQUENCIES = ["weekly", "monthly", "quarterly", "annual"] as const;
+const FREQUENCIES: { value: BillingFrequency; label: string }[] = [
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "annual", label: "Annual" },
+];
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "date", label: "Renewal date" },
+  { value: "cost", label: "Cost" },
+  { value: "name", label: "Name" },
+];
 
 function SubscriptionDialog({
   accounts,
@@ -132,6 +143,7 @@ function SubscriptionDialog({
             <div>
               <Label>Frequency</Label>
               <Select
+                items={FREQUENCIES}
                 value={frequency}
                 onValueChange={(value) => value && setFrequency(value)}
               >
@@ -139,9 +151,9 @@ function SubscriptionDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {FREQUENCIES.map((f) => (
-                    <SelectItem key={f} value={f} className="capitalize">
-                      {f}
+                  {FREQUENCIES.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -286,14 +298,16 @@ export function SubscriptionsClient({
                 <Plus className="mr-1 h-4 w-4" /> Add
               </Button>
             )}
-            <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+            <Select items={SORT_OPTIONS} value={sort} onValueChange={(v) => setSort(v as SortKey)}>
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="Sort" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="date">Renewal date</SelectItem>
-                <SelectItem value="cost">Cost</SelectItem>
-                <SelectItem value="name">Name</SelectItem>
+                {SORT_OPTIONS.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

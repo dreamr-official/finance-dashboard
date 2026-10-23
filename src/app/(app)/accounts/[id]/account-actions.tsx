@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Account, AccountType, Transaction } from "@/lib/types";
+import type { Account, AccountType, Transaction, TransactionType } from "@/lib/types";
 import { appToday } from "@/lib/dates";
 import { ACCOUNT_TYPE_OPTIONS } from "@/lib/account-types";
+import { TRANSACTION_TYPE_LABELS } from "@/lib/transactions";
 import { getResponseError } from "@/lib/client-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,20 +126,10 @@ export function RebuildHistoryButton({ accountId }: { accountId: string }) {
   );
 }
 
-const TXN_TYPES = [
-  { value: "deposit", label: "Deposit / contribution" },
-  { value: "withdrawal", label: "Withdrawal" },
-  { value: "transfer_in", label: "Transfer in" },
-  { value: "transfer_out", label: "Transfer out" },
-  { value: "buy", label: "Buy" },
-  { value: "sell", label: "Sell" },
-  { value: "dividend", label: "Dividend" },
-  { value: "interest", label: "Interest" },
-  { value: "fee", label: "Fee" },
-  { value: "expense", label: "Expense" },
-  { value: "income", label: "Income" },
-  { value: "other", label: "Other" },
-];
+const TXN_TYPES = Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({
+  value: value as TransactionType,
+  label,
+}));
 
 export function TransactionTypeSelect({
   transactionId,
@@ -190,7 +181,7 @@ export function TransactionTypeSelect({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select value={value} onValueChange={updateType}>
+      <Select items={TXN_TYPES} value={value} onValueChange={updateType}>
         <SelectTrigger
           aria-label={`Edit type for ${transactionName}`}
           className="h-9 w-[132px] text-xs"
@@ -300,6 +291,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
               <div>
                 <Label>Type</Label>
                 <Select
+                  items={TXN_TYPES}
                   value={transactionType}
                   onValueChange={(value) => value && setTransactionType(value)}
                 >
@@ -405,6 +397,7 @@ export function EditAccountButton({ account }: { account: Account }) {
             <div>
               <Label>Type</Label>
               <Select
+                items={ACCOUNT_TYPE_OPTIONS}
                 value={accountType}
                 onValueChange={(value) => value && setAccountType(value as AccountType)}
               >

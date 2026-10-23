@@ -28,6 +28,7 @@ export async function GET(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
   let syncWarning: string | undefined;
+  let syncFailed = false;
   let failed: { connectionId: string; errorCode: string }[] = [];
   const encKey = process.env.TOKEN_ENCRYPTION_KEY;
   if (getProvider("plaid")?.configured && encKey) {
@@ -44,6 +45,7 @@ export async function GET(req: Request) {
           .join(", ");
       }
     } catch {
+      syncFailed = true;
       syncWarning = "SYNC_FAILED";
     }
   }
@@ -55,7 +57,11 @@ export async function GET(req: Request) {
   const today = appToday();
   const failedConnectionIds = new Set(failed.map((result) => result.connectionId));
   const snapshots = (accounts ?? [])
-    .filter((account) => !failedConnectionIds.has(account.connection_id))
+    .filter(
+      (account) =>
+        (account.connection_id === null || !syncFailed) &&
+        !failedConnectionIds.has(account.connection_id),
+    )
     .map((account) => ({
       account_id: account.id,
       date: today,

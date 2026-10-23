@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Account } from "@/lib/types";
+import type { Account, AccountType } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,26 +21,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Upload } from "lucide-react";
-import { ACCOUNT_TYPE_LABELS } from "@/lib/account-types";
+import { ACCOUNT_TYPE_OPTIONS } from "@/lib/account-types";
 import { getResponseError } from "@/lib/client-api";
-
-const TYPES = [
-  "checking",
-  "savings",
-  "cash",
-  "brokerage",
-  "roth_ira",
-  "traditional_ira",
-  "401k",
-  "credit_card",
-  "loan",
-  "other",
-] as const;
 
 export function AddAccountDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [accountType, setAccountType] = useState<(typeof TYPES)[number]>("checking");
+  const [accountType, setAccountType] = useState<AccountType>("checking");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -101,14 +88,18 @@ export function AddAccountDialog() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Type</Label>
-                <Select value={accountType} onValueChange={(value) => value && setAccountType(value as (typeof TYPES)[number])}>
+                <Select
+                  items={ACCOUNT_TYPE_OPTIONS}
+                  value={accountType}
+                  onValueChange={(value) => value && setAccountType(value as AccountType)}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {TYPES.map((t) => (
-                      <SelectItem key={t} value={t} className="capitalize">
-                        {ACCOUNT_TYPE_LABELS[t]}
+                    {ACCOUNT_TYPE_OPTIONS.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
                       </SelectItem>
                     ))}
                   </SelectContent>
