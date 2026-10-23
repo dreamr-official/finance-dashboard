@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { getSessionUser } from "@/lib/auth";
 import { getDataset } from "@/lib/data/provider";
 import { appToday, shiftDate } from "@/lib/dates";
 import {
@@ -12,14 +13,16 @@ import {
 import type { Account } from "@/lib/types";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 import { reconcileInvestmentFunding } from "@/lib/reconcile";
+import { fundingDifferenceParts } from "@/lib/reconcile";
 import type { FundingIssue, InvestmentFundingSummary } from "@/lib/reconcile";
+import { sortAccountsByClass } from "@/lib/account-types";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_PAIRS = 300;
+const MAX_PAIRS = 10;
 
 const KIND_LABEL: Record<TransferKind, string> = {
   transfer: "Transfer",
@@ -44,10 +47,12 @@ export default async function TransfersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const [{ accounts, institutions, transactions }, params] = await Promise.all([
+  const [{ accounts, institutions, transactions }, params, user] = await Promise.all([
     getDataset(),
     searchParams,
+    getSessionUser(),
   ]);
+  const isAdmin = user?.role === "admin";
   const today = appToday();
   const from = dateParam(params.from, isoDaysAgo(today, 365));
   const to = dateParam(params.to, today);
@@ -76,6 +81,9 @@ export default async function TransfersPage({
   const needsReview = unmatched.filter((leg) => leg.status === "needs_review");
   const pending = unmatched.filter((leg) => leg.status === "pending");
   const visiblePairs = report.pairs.slice(0, MAX_PAIRS);
+  const institutionsById = new Map(institutions.map((institution) => [institution.id, institution.name]));
+  const sortedAccounts = sortAccountsByClass(accounts, institutionsById);
+  const needsReviewAmount = needsReview.reduce((sum, leg) => sum + leg.amount, 0);
   const { summary } = report;
 
   return (
@@ -83,8 +91,14 @@ export default async function TransfersPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Transfers</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Money moved between your own accounts, matched leg to leg so you can see that
-          everything that left one account arrived in another.
+          {needsReview.length
+            ? `Everything that left your accounts arrived, except ${needsReview.length} ${
+                needsReview.length === 1 ? "item" : "items"
+              } to check (${fmtCurrency(needsReviewAmount)}).`
+            : "Everything that left your accounts arrived."}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Moving money between your own accounts isn&apos;t a gain or a loss.
         </p>
       </div>
 
@@ -119,7 +133,7 @@ export default async function TransfersPage({
             className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
           >
             <option value="">All accounts</option>
-            {accounts.map((account) => (
+            {sortedAccounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.name}
               </option>
@@ -149,18 +163,21 @@ export default async function TransfersPage({
           noun="transfer"
         />
         <SummaryCard
-          title="Needs review"
-          count={summary.needsReview.count}
-          total={summary.needsReview.total}
-          noun="leg"
+          title="Left, never arrived"
+          count={needsReview.filter((leg) => leg.direction === "out").length}
+          total={needsReview.filter((leg) => leg.direction === "out").reduce((sum, leg) => sum + leg.amount, 0)}
+          noun="transaction"
         />
         <div className="col-span-2 sm:col-span-1">
           <SummaryCard
-            title="Pending"
-            count={summary.pending.count}
-            total={summary.pending.total}
-            noun="leg"
+            title="Arrived, unknown source"
+            count={needsReview.filter((leg) => leg.direction === "in").length}
+            total={needsReview.filter((leg) => leg.direction === "in").reduce((sum, leg) => sum + leg.amount, 0)}
+            noun="transaction"
           />
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <SummaryCard title="In transit" count={pending.length} total={pending.reduce((sum, leg) => sum + leg.amount, 0)} noun="transaction" />
         </div>
       </div>
 
@@ -212,7 +229,7 @@ export default async function TransfersPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Routes</CardTitle>
+          <CardTitle>Where transfers went</CardTitle>
           <p className="text-sm text-muted-foreground">Matched totals by where the money went.</p>
         </CardHeader>
         <CardContent>
@@ -255,17 +272,23 @@ export default async function TransfersPage({
           {visiblePairs.length ? (
             <ul className="divide-y">
               {visiblePairs.map((pair) => (
-                <PairRow key={pair.id} pair={pair} />
+                <PairRow key={pair.id} pair={pair} isAdmin={isAdmin} />
               ))}
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">No matched transfers in this range.</p>
           )}
           {report.pairs.length > MAX_PAIRS && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Showing the newest {MAX_PAIRS} of {report.pairs.length}. Narrow the date range to
-              see older ones.
-            </p>
+            <details className="mt-3 text-sm">
+              <summary className="cursor-pointer text-muted-foreground">
+                Show all {report.pairs.length}
+              </summary>
+              <ul className="mt-2 divide-y">
+                {report.pairs.slice(MAX_PAIRS).map((pair) => (
+                  <PairRow key={pair.id} pair={pair} isAdmin={isAdmin} />
+                ))}
+              </ul>
+            </details>
           )}
         </CardContent>
       </Card>
@@ -310,20 +333,18 @@ function FundingCard({ groups }: { groups: InvestmentFundingSummary[] }) {
         {groups.length ? (
           <ul className="divide-y">
             {groups.map((group) => {
-              const inTransit = group.missingArrival.some((item) => item.status === "in_transit");
-              const needsReview =
-                group.missingArrival.some((item) => item.status === "needs_review") ||
-                group.missingSource.length > 0;
-              const status =
-                group.difference === 0
-                  ? "All arrived"
-                  : inTransit && !needsReview
-                    ? `${fmtCurrency(Math.abs(group.difference))} in transit`
-                    : `${fmtCurrency(Math.abs(group.difference))} doesn't match — review`;
+              const { inTransit, needsReview } = fundingDifferenceParts(group);
+              const status = group.difference === 0
+                ? "All arrived"
+                : Math.abs(needsReview) < 0.005
+                  ? `${fmtCurrency(Math.abs(inTransit))} in transit`
+                  : `${fmtCurrency(Math.abs(needsReview))} doesn't match — review${
+                      Math.abs(inTransit) >= 0.005 ? ` · ${fmtCurrency(Math.abs(inTransit))} in transit` : ""
+                    }`;
               const statusClass =
                 group.difference === 0
                   ? "text-emerald-700 dark:text-emerald-400"
-                  : inTransit && !needsReview
+                  : Math.abs(needsReview) < 0.005
                     ? "text-amber-700 dark:text-amber-400"
                     : "text-red-700 dark:text-red-400";
               const unpairedCount = group.missingArrival.length + group.missingSource.length;
@@ -503,7 +524,7 @@ function lagLabel(lagDays: number) {
   return `${days} ${days === 1 ? "day" : "days"} ${lagDays > 0 ? "later" : "earlier"}`;
 }
 
-function PairRow({ pair }: { pair: TransferPair }) {
+function PairRow({ pair, isAdmin }: { pair: TransferPair; isAdmin: boolean }) {
   return (
     <li className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
       <div className="min-w-0">
@@ -511,7 +532,7 @@ function PairRow({ pair }: { pair: TransferPair }) {
         <div className="mt-0.5 text-xs text-muted-foreground">
           {KIND_LABEL[pair.kind]} · sent {fmtDate(`${pair.outDate}T00:00:00`)} · arrived{" "}
           {lagLabel(pair.lagDays)}
-          {pair.confirmed && " · linked"}
+          {isAdmin && pair.confirmed && " · linked"}
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">

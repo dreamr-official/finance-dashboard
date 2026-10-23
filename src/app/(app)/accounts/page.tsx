@@ -54,10 +54,12 @@ export default async function AccountsPage() {
           <Card key={key}>
             <CardHeader>
               <CardTitle className="flex min-w-0 items-center justify-between gap-2 text-base">
-                <span className="truncate">{inst?.name ?? "Manual"}</span>
-                <Badge variant="outline" className="shrink-0 capitalize">
-                  {inst?.provider}
-                </Badge>
+                <span className="truncate">{inst?.name ?? (isAdmin ? "Manual" : "Accounts")}</span>
+                {(isAdmin || inst?.provider !== "manual") && (
+                  <Badge variant="outline" className="shrink-0">
+                    {inst?.provider}
+                  </Badge>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -70,27 +72,31 @@ export default async function AccountsPage() {
                     >
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{a.name}</div>
-                        <div className="text-xs text-muted-foreground capitalize">
+                        <div className="text-xs text-muted-foreground">
                           {ACCOUNT_TYPE_LABELS[a.type]}
                           {a.mask ? ` ····${a.mask}` : ""}
-                          {a.isManual ? " · manual" : ""}
+                          {isAdmin && a.isManual ? " · manual" : ""}
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
                         {isAdmin && a.isManual && <ImportCsvDialog account={a} />}
                         <div className="text-right">
                           <div className="text-sm font-medium tabular-nums">
-                            {fmtCurrency(a.currentBalance)}
+                            {a.assetClass === "liability"
+                              ? `Owe ${fmtCurrency(Math.abs(a.currentBalance))}`
+                              : fmtCurrency(a.currentBalance)}
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {a.isManual
-                              ? "Manual"
-                              : a.connectionStatus === "healthy"
+                          {isAdmin && (
+                            <div className="text-xs text-muted-foreground">
+                              {a.isManual
+                                ? "Manual"
+                                : a.connectionStatus === "healthy"
                               ? "connected"
                               : a.connectionStatus === "needs_reauth"
                                 ? "reconnect needed"
                                 : a.connectionStatus}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </Link>

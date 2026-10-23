@@ -79,25 +79,68 @@ export const demoAccounts: Account[] = [
   }),
 ];
 
-// ~18 months of daily balance snapshots ending at current balance
-export const demoSnapshots: BalanceSnapshot[] = demoAccounts.flatMap((a, ai) => {
-  const snaps: BalanceSnapshot[] = [];
-  const start = a.currentBalance * (0.55 + (ai % 3) * 0.08);
-  for (let i = 545; i >= 0; i -= 1) {
-    const t = 1 - i / 545;
-    const trend = start + (a.currentBalance - start) * t;
-    const noise = a.assetClass === "cash" ? Math.sin(i / 9 + ai) * 400 : trend * 0.015 * walk(ai + 1, i);
-    snaps.push({
-      accountId: a.id,
-      date: d(i),
-      balance:
-        a.assetClass === "liability"
-          ? Math.min(0, trend + noise)
-          : Math.max(0, trend + noise),
-    });
-  }
-  return snaps;
-});
+function buildDemoSnapshots(transactions: Transaction[]): BalanceSnapshot[] {
+  return demoAccounts.flatMap((account, accountIndex) => {
+    const snapshots: BalanceSnapshot[] = [];
+    const hasInvestments =
+      account.assetClass === "investment" || account.assetClass === "retirement";
+    const externalTypes = new Set<TransactionType>([
+      "deposit",
+      "withdrawal",
+      "transfer_in",
+      "transfer_out",
+    ]);
+    const flows = hasInvestments
+      ? transactions.filter(
+          (transaction) =>
+            transaction.accountId === account.id &&
+            !transaction.pending &&
+            externalTypes.has(transaction.type),
+        )
+      : [];
+    const netFlows = flows.reduce((sum, transaction) => sum + transaction.amount, 0);
+    const marketChange = Math.round(Math.abs(account.currentBalance) * 0.02 * 100) / 100;
+    const startingBalance = account.currentBalance - netFlows - marketChange;
+    const endNoise = Math.sin(545 * 0.13 + accountIndex);
+    for (let i = 545; i >= 0; i -= 1) {
+      const t = 1 - i / 545;
+      const date = d(i);
+      const trend =
+        account.currentBalance * (0.55 + (accountIndex % 3) * 0.08) +
+        (account.currentBalance -
+          account.currentBalance * (0.55 + (accountIndex % 3) * 0.08)) *
+          t;
+      const flowTotal = flows
+        .filter((transaction) => transaction.date <= date)
+        .reduce((sum, transaction) => sum + transaction.amount, 0);
+      const marketWalk =
+        marketChange * t +
+        Math.abs(startingBalance) *
+          0.003 *
+          (Math.sin((545 - i) * 0.13 + accountIndex) - endNoise) *
+          t *
+          (1 - t);
+      const noise =
+        account.assetClass === "cash"
+          ? Math.sin(i / 9 + accountIndex) * 400
+          : trend * 0.015 * walk(accountIndex + 1, i);
+      const balance = hasInvestments
+        ? startingBalance + flowTotal + marketWalk
+        : trend + noise;
+      snapshots.push({
+        accountId: account.id,
+        date,
+        balance: i === 0
+          ? account.currentBalance
+          :
+          account.assetClass === "liability"
+            ? Math.min(0, balance)
+            : Math.max(0, balance),
+      });
+    }
+    return snapshots;
+  });
+}
 
 let txnSeq = 0;
 function txn(
@@ -192,14 +235,14 @@ const initialDemoTransactions: Transaction[] = [
   txn("a-rh-brok", 100, "Buy AAPL 6 sh", -1140.0, "buy"),
   txn("a-rh-brok", 210, "Sell TSLA 2 sh", 480.0, "sell"),
   // Roth contributions (current + prior tax year)
-  txn("a-fid-roth", 20, "Roth contribution 2026", 1000.0, "deposit"),
-  txn("a-fid-roth", 50, "Roth contribution 2026", 1000.0, "deposit"),
-  txn("a-fid-roth", 80, "Roth contribution 2025", 1500.0, "deposit"),
-  txn("a-fid-roth", 110, "Roth contribution 2025", 1500.0, "deposit"),
-  txn("a-fid-roth", 320, "Roth contribution 2025", 2000.0, "deposit"),
-  txn("a-fid-roth", 350, "Roth contribution 2025", 2000.0, "deposit"),
-  txn("a-rh-roth", 60, "Roth contribution 2026", 500.0, "deposit"),
-  txn("a-rh-roth", 130, "Roth contribution 2025", 1000.0, "deposit"),
+  txn("a-fid-roth", 20, "Roth contribution 2026", 500.0, "deposit"),
+  txn("a-fid-roth", 50, "Roth contribution 2026", 500.0, "deposit"),
+  txn("a-fid-roth", 80, "Roth contribution 2025", 1500.0, "deposit", { taxYear: 2025 }),
+  txn("a-fid-roth", 110, "Roth contribution 2025", 1500.0, "deposit", { taxYear: 2025 }),
+  txn("a-fid-roth", 320, "Roth contribution 2025", 2000.0, "deposit", { taxYear: 2025 }),
+  txn("a-fid-roth", 350, "Roth contribution 2025", 2000.0, "deposit", { taxYear: 2025 }),
+  txn("a-rh-roth", 60, "Roth contribution 2026", 250.0, "deposit"),
+  txn("a-rh-roth", 130, "Roth contribution 2025", 1000.0, "deposit", { taxYear: 2025 }),
   // 401k payroll contributions
   ...[10, 24, 38, 52, 66, 80, 94, 108, 122, 136, 150, 164].flatMap((n) => [
     txn("a-fid-401k", n, "401(k) payroll contribution", 1150.0, "deposit"),
@@ -207,8 +250,8 @@ const initialDemoTransactions: Transaction[] = [
   ]),
   // transfers between investment accounts (rollover, correctly excluded)
   ...transferPair("a-fid-brok", "a-fid-roth", 140, 1000, "Fidelity Roth IRA"),
-  ...transferPair("a-bofa-chk", "a-fid-roth", 25, 1250, "Fidelity Roth IRA"),
-  ...transferPair("a-bofa-sav", "a-rh-roth", 18, 750, "Robinhood Roth IRA"),
+  ...transferPair("a-bofa-chk", "a-fid-roth", 25, 500, "Fidelity Roth IRA"),
+  ...transferPair("a-bofa-sav", "a-rh-roth", 18, 500, "Robinhood Roth IRA"),
   // checking outflows that funded the deposits above (unlinked; matched by the Transfers page)
   ...(
     [
@@ -330,6 +373,8 @@ export const demoTransactions: Transaction[] = [
   ...initialDemoTransactions,
   ...recurringTransactions,
 ];
+
+export const demoSnapshots: BalanceSnapshot[] = buildDemoSnapshots(demoTransactions);
 
 export const demoHoldings: Holding[] = [
   { id: "h1", accountId: "a-fid-brok", symbol: "VTI", name: "Vanguard Total Stock", quantity: 42.1, price: 292.4, value: 12310.0, costBasis: 11200.0, assetType: "etf" },

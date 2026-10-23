@@ -60,7 +60,16 @@ export function classifyInvestmentFlows(
     const pair = pairByTransaction.get(transaction);
     switch (transaction.type) {
       case "deposit":
-        counted.push(entry(transaction, account, Math.abs(transaction.amount), "deposit"));
+        counted.push(
+          entry(
+            transaction,
+            account,
+            Math.abs(transaction.amount),
+            "deposit",
+            pair?.from,
+            pair?.to,
+          ),
+        );
         break;
       case "withdrawal":
         counted.push(entry(transaction, account, -Math.abs(transaction.amount), "withdrawal"));
@@ -146,6 +155,23 @@ export function classifyInvestmentFlows(
   return { counted, notCounted };
 }
 
+export function contributionTaxYear(
+  transaction: Pick<Transaction, "taxYear" | "date" | "name">,
+): number {
+  if (transaction.taxYear !== undefined && transaction.taxYear !== null) {
+    return transaction.taxYear;
+  }
+  const dateYear = Number(transaction.date.slice(0, 4));
+  const beforeTaxDeadline = transaction.date.slice(5, 10) <= "04-15";
+  if (!beforeTaxDeadline) return dateYear;
+  const namedYear = transaction.name.match(/\b(\d{4})\b/);
+  const priorYear = dateYear - 1;
+  if (/prior year/i.test(transaction.name) || Number(namedYear?.[1]) === priorYear) {
+    return priorYear;
+  }
+  return dateYear;
+}
+
 export function rothContributions(
   accounts: Account[],
   transactions: Transaction[],
@@ -157,8 +183,7 @@ export function rothContributions(
 } {
   const rothAccounts = accounts.filter((account) => account.type === "roth_ira");
   const { counted, notCounted } = classifyInvestmentFlows(accounts, transactions);
-  const matchingYear = (transaction: Transaction) =>
-    (transaction.taxYear ?? Number(transaction.date.slice(0, 4))) === taxYear;
+  const matchingYear = (transaction: Transaction) => contributionTaxYear(transaction) === taxYear;
   const rothCounted = counted.filter(
     (flow) =>
       rothAccounts.some((account) => account.id === flow.account.id) &&

@@ -84,6 +84,18 @@ describe("classifyInvestmentFlows", () => {
     ]);
   });
 
+  it("attaches a matched source account to deposit flows", () => {
+    const cash = account("cash", "cash", "checking");
+    const brokerage = account("brokerage", "investment");
+    const transferOut = transaction("cash-out", "cash", "transfer_out", -500, "Transfer", "deposit-pair");
+    const deposit = transaction("deposit", "brokerage", "deposit", 500, "ACH deposit", "deposit-pair");
+    const result = classifyInvestmentFlows([cash, brokerage], [transferOut, deposit]);
+
+    expect(result.counted).toMatchObject([
+      { transaction: deposit, fromAccount: cash, toAccount: brokerage },
+    ]);
+  });
+
   it("does not count transfers from brokerage in portfolio contributions but counts them for Roth", () => {
     const accounts = [
       account("brokerage", "investment"),
@@ -175,6 +187,30 @@ describe("classifyInvestmentFlows", () => {
     expect(rothContributions([roth], [explicit, fallback], 2026).deposits).toBe(200);
   });
 
+  it("infers prior-year Roth contributions before the tax deadline from their name", () => {
+    const roth = account("roth", "retirement", "roth_ira");
+    const priorYear = {
+      ...transaction("prior-year", "roth", "deposit", 100, "Roth contribution prior year"),
+      date: "2026-03-10",
+    };
+    const namedYear = {
+      ...transaction("named-year", "roth", "deposit", 200, "Roth contribution 2025"),
+      date: "2026-04-15",
+    };
+    const tooLate = {
+      ...transaction("too-late", "roth", "deposit", 50, "Roth contribution 2025"),
+      date: "2026-04-16",
+    };
+    const earlierCentury = {
+      ...transaction("earlier-century", "roth", "deposit", 75, "Roth contribution 1999"),
+      date: "2000-04-15",
+    };
+
+    expect(rothContributions([roth], [priorYear, namedYear, tooLate], 2025).deposits).toBe(300);
+    expect(rothContributions([roth], [priorYear, namedYear, tooLate], 2026).deposits).toBe(50);
+    expect(rothContributions([roth], [earlierCentury], 1999).deposits).toBe(75);
+  });
+
   it("returns per-account Roth deposits and withdrawals, including accounts with zeroes", () => {
     const brokerage = account("brokerage", "investment");
     const roths = [
@@ -201,6 +237,16 @@ describe("classifyInvestmentFlows", () => {
       { account: roths[3], deposits: 0, withdrawals: 0 },
     ]);
     expect(result).toMatchObject({ deposits: 620, withdrawals: 40 });
+    expect(
+      classifyInvestmentFlows([brokerage, ...roths], [out, incoming]).notCounted.find(
+        (flow) => flow.transaction.id === incoming.id,
+      ),
+    ).toMatchObject({
+      transaction: incoming,
+      amount: 500,
+      source: "transfer_from_investment",
+      fromAccount: brokerage,
+    });
   });
 
   it("finds Roth-named investment accounts that are not typed as Roth IRAs", () => {

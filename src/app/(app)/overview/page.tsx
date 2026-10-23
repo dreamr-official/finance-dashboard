@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DonutChart } from "@/components/charts/donut-chart";
 import { chartColor } from "@/components/charts/colors";
 import Link from "next/link";
+import { getSessionUser } from "@/lib/auth";
 import {
   getUpcomingSubscriptions,
   isSubscriptionDatePredicted,
@@ -26,7 +27,9 @@ import {
 
 
 export default async function OverviewPage() {
-  const { accounts, institutions, snapshots, subscriptions, transactions } = await getDataset();
+  const [{ accounts, institutions, snapshots, subscriptions, transactions }, user] =
+    await Promise.all([getDataset(), getSessionUser()]);
+  const isAdmin = user?.role === "admin";
   const todayDate = appToday();
   const today = new Date(`${todayDate}T12:00:00.000Z`);
   const upcomingSubscriptions = getUpcomingSubscriptions(subscriptions, today, 14);
@@ -77,9 +80,8 @@ export default async function OverviewPage() {
         <StatCard title="Assets" value={fmtCompact(summary.assets)} />
         <Link href="#liabilities" className="block">
           <StatCard
-            title="Liabilities"
-            value={fmtCurrency(summary.liabilities, { decimals: 0 })}
-            sub="Credit cards & loans"
+            title="Debt (cards & loans)"
+            value={fmtCurrency(Math.abs(summary.liabilities), { decimals: 0 })}
           />
         </Link>
         <StatCard title="Cash" value={fmtCompact(summary.cash)} />
@@ -145,9 +147,9 @@ export default async function OverviewPage() {
             </div>
           </div>
           <div id="liabilities" className="flex items-center justify-between border-t pt-3 text-sm">
-            <span className="text-muted-foreground">Liabilities</span>
-            <span className="font-medium tabular-nums text-red-600 dark:text-red-400">
-              {fmtCurrency(summary.liabilities, { decimals: 0 })}
+            <span className="text-muted-foreground">Debt</span>
+            <span className="font-medium tabular-nums">
+              {fmtCurrency(Math.abs(summary.liabilities), { decimals: 0 })}
             </span>
           </div>
           {liabilityAccounts.length ? (
@@ -166,8 +168,8 @@ export default async function OverviewPage() {
                         </span>
                       )}
                     </span>
-                    <span className="shrink-0 text-sm font-medium tabular-nums text-red-600 dark:text-red-400">
-                      {fmtCurrency(-account.currentBalance, { decimals: 0 })}
+                    <span className="shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
+                      Owe {fmtCurrency(Math.abs(account.currentBalance), { decimals: 2 })}
                     </span>
                   </Link>
                 </li>
@@ -184,7 +186,10 @@ export default async function OverviewPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle>Coming up</CardTitle>
+            <div>
+              <CardTitle>Coming up</CardTitle>
+              <p className="text-xs text-muted-foreground">Next 14 days</p>
+            </div>
             <Link href="/subscriptions" className="text-sm text-primary hover:underline">
               Subscriptions
             </Link>
@@ -196,7 +201,7 @@ export default async function OverviewPage() {
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{subscription.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      {fmtDate(getSubscriptionNextPaymentDate(subscription, today))} · {isSubscriptionDatePredicted(subscription, today) ? "Predicted" : "Verified"}
+                      {fmtDate(getSubscriptionNextPaymentDate(subscription, today))} · {isSubscriptionDatePredicted(subscription, today) ? "Expected" : "Confirmed by bank"}
                     </div>
                   </div>
                   <span className="shrink-0 text-sm tabular-nums">{fmtCurrency(subscription.amount)}</span>
@@ -247,7 +252,7 @@ export default async function OverviewPage() {
         <CardContent>
           <NetWorthChart data={series} />
           <p className="mt-2 text-xs text-muted-foreground">
-            Accounts without history are shown at their first recorded (or current) balance.
+            Some accounts were added recently, so their part of the chart starts flat.
           </p>
         </CardContent>
       </Card>
@@ -282,7 +287,7 @@ export default async function OverviewPage() {
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{a.name}</div>
-                    <div className="text-xs text-muted-foreground">
+                    {isAdmin && <div className="text-xs text-muted-foreground">
                       {instById[a.institutionId]?.name}
                       {a.mask ? ` ····${a.mask}` : ""} ·{" "}
                       {a.isManual
@@ -293,16 +298,12 @@ export default async function OverviewPage() {
                       {a.connectionStatus === "needs_reauth" && (
                         <span className="ml-2 text-amber-600">reconnect needed</span>
                       )}
-                    </div>
+                    </div>}
                   </div>
-                  <div
-                    className={
-                      isLiability(a)
-                        ? "text-sm font-medium tabular-nums text-red-600 dark:text-red-400"
-                        : "text-sm font-medium tabular-nums"
-                    }
-                  >
-                    {fmtCurrency(a.currentBalance)}
+                  <div className={isLiability(a) ? "text-sm font-medium tabular-nums text-muted-foreground" : "text-sm font-medium tabular-nums"}>
+                    {isLiability(a)
+                      ? `Owe ${fmtCurrency(Math.abs(a.currentBalance))}`
+                      : fmtCurrency(a.currentBalance)}
                   </div>
                 </Link>
               </li>

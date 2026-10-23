@@ -43,9 +43,15 @@ export function plaidAccountType(type?: string, subtype?: string, name?: string)
       return "roth_ira";
     }
     if (/\broth\b/i.test(name ?? "")) return "roth_ira";
-    if (normalizedSubtype === "ira" || normalizedSubtype === "traditional_ira") {
+    if (
+      normalizedSubtype === "ira" ||
+      normalizedSubtype === "traditional_ira" ||
+      normalizedSubtype === "sep_ira" ||
+      normalizedSubtype === "simple_ira"
+    ) {
       return "traditional_ira";
     }
+    if (/^(403b|457b)(\s|$)/.test(normalizedSubtype ?? "")) return "401k";
     return "brokerage";
   }
   return "other";

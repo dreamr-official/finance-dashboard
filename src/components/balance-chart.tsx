@@ -21,8 +21,10 @@ import {
 
 export function BalanceChart({
   data,
+  label = "Balance",
 }: {
   data: { date: string; balance: number }[];
+  label?: string;
 }) {
   const chartData = withChartTime(data);
   const spanDays = chartSpanDays(chartData);
@@ -30,9 +32,10 @@ export function BalanceChart({
   const dateByTime = new Map(chartData.map((point) => [point.t, point.date]));
   const domain = paddedAmountDomain(chartData.map((point) => point.balance));
   return (
-    <div className="h-48 w-full">
-      <ResponsiveContainer>
-        <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+    <div>
+      <div className="h-48 w-full">
+        <ResponsiveContainer>
+          <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
           <defs>
             <linearGradient id="bal" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--color-chart-1, #10b981)" stopOpacity={0.25} />
@@ -47,7 +50,7 @@ export function BalanceChart({
             domain={chartTimeDomain(chartData)}
             ticks={ticks}
             tickFormatter={(value) => formatChartTime(Number(value), spanDays)}
-            tick={{ fontSize: 11 }}
+            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             minTickGap={48}
             axisLine={false}
             tickLine={false}
@@ -55,13 +58,13 @@ export function BalanceChart({
           <YAxis
             tickFormatter={(v) => fmtCompact(v)}
             width={56}
-            tick={{ fontSize: 11 }}
+            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             axisLine={false}
             tickLine={false}
             domain={domain}
           />
           <Tooltip
-            formatter={(v) => [fmtCurrency(Number(v)), "Balance"]}
+            formatter={(v) => [fmtCurrency(Number(v)), label]}
             labelFormatter={(value) =>
               fmtDate(
                 dateByTime.get(Number(value)) ??
@@ -84,8 +87,12 @@ export function BalanceChart({
             isAnimationActive={false}
             dot={chartData.length === 1}
           />
-        </AreaChart>
-      </ResponsiveContainer>
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Balance at the end of each day
+      </p>
     </div>
   );
 }

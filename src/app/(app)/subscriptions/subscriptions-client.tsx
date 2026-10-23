@@ -323,9 +323,9 @@ export function SubscriptionsClient({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="break-words font-medium">{s.name}</div>
-                  <div className="text-xs text-muted-foreground capitalize">
+                  <div className="text-xs text-muted-foreground">
                     {s.frequency}
-                    {s.detected ? " · auto-detected" : " · manual"}
+                    {isAdmin && (s.detected ? " · auto-detected" : " · manual")}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
@@ -352,7 +352,7 @@ export function SubscriptionsClient({
                     <>
                       <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s, today))}</div>
                       <div className="text-xs text-muted-foreground">
-                        {isSubscriptionDatePredicted(s, today) ? "predicted" : "verified"}
+                        {isSubscriptionDatePredicted(s, today) ? "Expected" : "Confirmed by bank"}
                       </div>
                     </>
                   )}
@@ -405,9 +405,9 @@ export function SubscriptionsClient({
                   <TableRow key={s.id}>
                     <TableCell>
                       <div className="max-w-48 truncate font-medium">{s.name}</div>
-                      <div className="text-xs text-muted-foreground capitalize">
+                      <div className="text-xs text-muted-foreground">
                         {s.frequency}
-                        {s.detected ? " · auto-detected" : " · manual"}
+                        {isAdmin && (s.detected ? " · auto-detected" : " · manual")}
                       </div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -420,7 +420,7 @@ export function SubscriptionsClient({
                         <>
                           <div className="text-sm">{fmtDate(getSubscriptionNextPaymentDate(s, today))}</div>
                           <div className="text-xs text-muted-foreground">
-                            {isSubscriptionDatePredicted(s, today) ? "predicted" : "verified"}
+                            {isSubscriptionDatePredicted(s, today) ? "Expected" : "Confirmed by bank"}
                           </div>
                         </>
                       )}

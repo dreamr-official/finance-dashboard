@@ -18,7 +18,7 @@ export function computeNetWorth(accounts: Account[]): NetWorthSummary {
   const sum = (xs: Account[]) => xs.reduce((s, a) => s + a.currentBalance, 0);
   const assets = sum(accounts.filter((a) => !isLiability(a)));
   const liabilities = -sum(accounts.filter(isLiability));
-  const cash = sum(accounts.filter((a) => a.assetClass === "cash"));
+  const cash = sum(accounts.filter((a) => a.assetClass === "cash" && !isLiability(a)));
   const investments = sum(
     accounts.filter((a) => a.assetClass === "investment" || a.assetClass === "retirement"),
   );
@@ -63,11 +63,14 @@ export function netWorthSeries(
     }
     return { date: d, value: total };
   });
-  if (today && accounts.length > 0 && (!dates.length || today > dates[dates.length - 1])) {
-    series.push({
-      date: today,
-      value: accounts.reduce((total, account) => total + account.currentBalance, 0),
-    });
+  if (today && accounts.length > 0) {
+    const value = accounts.reduce((total, account) => total + account.currentBalance, 0);
+    const todayIndex = series.findIndex((point) => point.date === today);
+    if (todayIndex >= 0) {
+      series[todayIndex] = { date: today, value };
+    } else if (!dates.length || today > dates[dates.length - 1]) {
+      series.push({ date: today, value });
+    }
   }
   return series;
 }
@@ -173,7 +176,7 @@ export function applyNetWorthChange(
     summary.change = { day: null, week: null, month: null, year: null };
     return summary;
   }
-  const now = series[series.length - 1].value;
+  const now = summary.netWorth;
   const lookup = (days: number) => {
     const cutoff = new Date(series[series.length - 1].date);
     cutoff.setUTCDate(cutoff.getUTCDate() - days);

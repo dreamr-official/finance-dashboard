@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Account, AccountType, Transaction, TransactionType } from "@/lib/types";
 import { appToday } from "@/lib/dates";
+import { contributionTaxYear } from "@/lib/contributions";
 import { ACCOUNT_TYPE_OPTIONS } from "@/lib/account-types";
 import { TRANSACTION_TYPE_LABELS } from "@/lib/transactions";
 import { getResponseError } from "@/lib/client-api";
@@ -119,7 +120,7 @@ export function RebuildHistoryButton({ accountId }: { accountId: string }) {
     <div className="flex flex-col items-start gap-1">
       <Button type="button" size="sm" variant="outline" className="h-9" onClick={rebuild} disabled={loading}>
         <History className="mr-1 h-4 w-4" />
-        {loading ? "Rebuilding…" : "Rebuild history from transactions"}
+        {loading ? "Rebuilding…" : "Rebuild history"}
       </Button>
       {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>
@@ -149,7 +150,11 @@ export function TransactionTypeSelect({
   const router = useRouter();
   const [value, setValue] = useState(transactionType);
   const [taxYear, setTaxYear] = useState(
-    transactionTaxYear ?? Number(transactionDate.slice(0, 4)),
+    contributionTaxYear({
+      taxYear: transactionTaxYear,
+      date: transactionDate,
+      name: transactionName,
+    }),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -241,6 +246,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
   const [transactionType, setTransactionType] = useState("deposit");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const today = appToday();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -269,7 +275,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
 
   return (
     <>
-      <Button type="button" size="sm" className="h-9" onClick={() => setOpen(true)}>
+      <Button type="button" className="h-10 md:h-8" onClick={() => setOpen(true)}>
         <Plus className="mr-1 h-4 w-4" /> Add transaction
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -286,7 +292,7 @@ export function AddTransactionButton({ account }: { account: Account }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="date">Date</Label>
-                <Input id="date" name="date" type="date" required />
+                <Input id="date" name="date" type="date" defaultValue={today} max={today} required />
               </div>
               <div>
                 <Label>Type</Label>
@@ -364,7 +370,13 @@ export function EditAccountButton({ account }: { account: Account }) {
   }
 
   async function onDelete() {
-    if (!confirm(`Delete ${account.name} and all its transactions?`)) return;
+    if (
+      !confirm(
+        `Delete ${account.name}? This permanently removes its transaction and balance history from all charts and totals. There is no archive or restore option.`,
+      )
+    ) {
+      return;
+    }
     const res = await fetch(`/api/accounts/${account.id}`, { method: "DELETE" });
     if (!res.ok) {
       setError(await getResponseError(res, "Could not delete account."));

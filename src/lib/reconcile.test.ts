@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcileInvestmentFunding } from "./reconcile";
+import { fundingDifferenceParts, reconcileInvestmentFunding } from "./reconcile";
 import type { Account, Institution, Transaction } from "./types";
 
 function account(
@@ -94,6 +94,7 @@ describe("reconcileInvestmentFunding", () => {
       "in_transit",
       "needs_review",
     ]);
+    expect(fundingDifferenceParts(summary)).toEqual({ inTransit: 200, needsReview: 500 });
   });
 
   it("excludes investment-to-investment transfers", () => {

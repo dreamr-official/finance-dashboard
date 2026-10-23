@@ -23,6 +23,20 @@ export function mapPlaidInvestmentType(
     return "interest";
   }
   if (normalizedType.includes("fee") || normalizedSubtype.includes("fee")) return "fee";
+  if (
+    normalizedType === "cash" &&
+    plaidAmount < 0 &&
+    /funds transfer received|\beft\b|\bach\b|deposit/i.test(name ?? "")
+  ) {
+    return "transfer_in";
+  }
+  if (
+    normalizedType === "cash" &&
+    plaidAmount > 0 &&
+    /funds transfer|\beft\b|\bach\b|withdraw/i.test(name ?? "")
+  ) {
+    return "transfer_out";
+  }
   if (/contribut/i.test(name ?? "") && plaidAmount < 0) return "deposit";
   if (labels.has("transfer")) {
     return plaidAmount > 0 ? "transfer_out" : plaidAmount < 0 ? "transfer_in" : "other";

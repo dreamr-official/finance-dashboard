@@ -85,7 +85,7 @@ export function NetWorthChart({
               domain={chartTimeDomain(chartData)}
               ticks={ticks}
               tickFormatter={(value) => formatChartTime(Number(value), spanDays)}
-              tick={{ fontSize: 11 }}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               className="text-muted-foreground"
               minTickGap={48}
               axisLine={false}
@@ -94,7 +94,7 @@ export function NetWorthChart({
             <YAxis
               tickFormatter={(v) => fmtCompact(v)}
               width={64}
-              tick={{ fontSize: 11 }}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               className="text-muted-foreground"
               axisLine={false}
               tickLine={false}
@@ -127,6 +127,9 @@ export function NetWorthChart({
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Total net worth at the end of each day
+      </p>
     </div>
   );
 }

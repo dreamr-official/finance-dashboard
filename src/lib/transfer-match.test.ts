@@ -251,22 +251,22 @@ describe("matchTransfers confirmed links", () => {
 });
 
 describe("matchTransfers greedy matching", () => {
-  it("matches amounts within the five-day window, including exactly five days", () => {
+  it("matches amounts within the seven-day window, including exactly seven days", () => {
     const result = matchTransfers(
       [
         out("within", "2026-03-01", 20),
-        incoming("at-limit", "2026-03-06", 20),
+        incoming("at-limit", "2026-03-08", 20),
       ],
       [account("bank"), account("savings")],
     );
 
     expect(result.pairs).toHaveLength(1);
-    expect(result.pairs[0].lagDays).toBe(5);
+    expect(result.pairs[0].lagDays).toBe(7);
   });
 
-  it("does not match legs six days apart", () => {
+  it("does not match legs eight days apart", () => {
     const result = matchTransfers(
-      [out("old-out", "2026-03-01", 20), incoming("late-in", "2026-03-07", 20)],
+      [out("old-out", "2026-03-01", 20), incoming("late-in", "2026-03-09", 20)],
       [account("bank"), account("savings")],
     );
 

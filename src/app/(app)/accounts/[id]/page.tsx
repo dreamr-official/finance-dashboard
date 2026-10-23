@@ -43,16 +43,6 @@ import {
 import { canManageHoldings } from "@/lib/manual-holdings";
 import { TRANSACTION_TYPE_LABELS, transactionCountLabel } from "@/lib/transactions";
 
-
-const TYPE_LABEL: Record<string, string> = {
-  deposit: "contribution",
-  withdrawal: "withdrawal",
-  transfer_in: "transfer in",
-  transfer_out: "transfer out",
-  buy: "buy",
-  sell: "sell",
-};
-
 export default async function AccountPage({
   params,
   searchParams,
@@ -79,7 +69,7 @@ export default async function AccountPage({
     .filter((t) => t.accountId === id)
     .sort(compareNewestFirst);
   const visibleTxns = allTxns.slice(0, limit);
-  const monthGroups = groupByMonth(visibleTxns, allTxns, accounts, transactions);
+  const monthGroups = groupByMonth(visibleTxns, allTxns, accounts, transactions, true);
   const acctHoldings = holdings.filter((h) => h.accountId === id);
   const holdingShares = holdingsWithShare(acctHoldings);
   const holdingTotal = holdingShares.reduce((sum, holding) => sum + holding.value, 0);
@@ -95,33 +85,63 @@ export default async function AccountPage({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm text-muted-foreground">{inst?.name}</p>
-            <h1 className="truncate text-2xl font-semibold tracking-tight">{account.name}</h1>
+            <h1
+              className="break-words text-xl font-semibold tracking-tight sm:truncate sm:text-2xl"
+              title={account.name}
+            >
+              {account.name}
+            </h1>
           </div>
           {isAdmin && (
             <div className="flex flex-wrap items-center gap-2">
-              {account.isManual && <AddTransactionButton account={account} />}
-              <AddPastBalanceButton accountId={account.id} />
-              {(account.assetClass === "cash" || account.assetClass === "liability") && (
-                <RebuildHistoryButton accountId={account.id} />
+              {account.isManual && (
+                <div className="md:hidden">
+                  <AddTransactionButton account={account} />
+                </div>
               )}
-              {(account.isManual || accounts.some((a) => a.isManual && a.id !== account.id)) && (
-                <TransferButton accounts={accounts} initialFromAccountId={account.id} />
-              )}
-              <EditAccountButton account={account} />
+              <div className="hidden flex-wrap items-center gap-2 md:flex">
+                {account.isManual && <AddTransactionButton account={account} />}
+                <AddPastBalanceButton accountId={account.id} />
+                {(account.assetClass === "cash" || account.assetClass === "liability") && (
+                  <RebuildHistoryButton accountId={account.id} />
+                )}
+                {(account.isManual || accounts.some((a) => a.isManual && a.id !== account.id)) && (
+                  <TransferButton accounts={accounts} initialFromAccountId={account.id} />
+                )}
+                <EditAccountButton account={account} />
+              </div>
+              <details className="relative md:hidden">
+                <summary className="flex h-10 cursor-pointer list-none items-center rounded-lg border bg-background px-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                  More
+                </summary>
+                <div className="absolute right-0 top-full z-20 mt-2 flex min-w-52 flex-col items-stretch gap-2 rounded-lg border bg-background p-2 shadow-lg [&_button]:min-h-10 [&_button]:min-w-10">
+                  <AddPastBalanceButton accountId={account.id} />
+                  {(account.assetClass === "cash" || account.assetClass === "liability") && (
+                    <RebuildHistoryButton accountId={account.id} />
+                  )}
+                  {(account.isManual || accounts.some((a) => a.isManual && a.id !== account.id)) && (
+                    <TransferButton accounts={accounts} initialFromAccountId={account.id} />
+                  )}
+                  <EditAccountButton account={account} />
+                </div>
+              </details>
             </div>
           )}
         </div>
         <div className="mt-1 text-3xl font-semibold tabular-nums">
-          {fmtCurrency(account.currentBalance)}
+          {account.assetClass === "liability"
+            ? `Owe ${fmtCurrency(Math.abs(account.currentBalance))}`
+            : fmtCurrency(account.currentBalance)}
         </div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          {account.isManual
-            ? "Manual"
-            : account.lastSyncedAt
-              ? `Last synced ${new Date(account.lastSyncedAt).toLocaleString("en-US", { timeZone: APP_TIMEZONE })}`
-              : "Never synced"}
-          {account.isManual ? " · manual account" : " · balance comes from bank sync"}
-        </div>
+        {isAdmin && (
+          <div className="mt-1 text-xs text-muted-foreground">
+            {account.isManual
+              ? "Manual · manual account"
+              : account.lastSyncedAt
+                ? `Last synced ${new Date(account.lastSyncedAt).toLocaleString("en-US", { timeZone: APP_TIMEZONE })}`
+                : "Never synced"}
+          </div>
+        )}
         {!account.isManual &&
           (account.assetClass === "investment" || account.assetClass === "retirement") &&
           account.connectionNotice && (
@@ -134,10 +154,21 @@ export default async function AccountPage({
       {hist.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Balance history</CardTitle>
+            <CardTitle>
+              {account.assetClass === "liability" ? "Amount owed" : "Balance history"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <BalanceChart data={hist} />
+            <BalanceChart
+              data={hist.map((point) => ({
+                ...point,
+                balance:
+                  account.assetClass === "liability"
+                    ? Math.abs(point.balance)
+                    : point.balance,
+              }))}
+              label={account.assetClass === "liability" ? "Amount owed" : "Balance"}
+            />
           </CardContent>
         </Card>
       )}
@@ -215,7 +246,7 @@ export default async function AccountPage({
                               <div
                                 className={`tabular-nums ${
                                   gainLoss! >= 0
-                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    ? "text-emerald-700 dark:text-emerald-400"
                                     : "text-red-600 dark:text-red-400"
                                 }`}
                               >
@@ -339,7 +370,7 @@ export default async function AccountPage({
                             />
                           ) : (
                             <Badge variant={t.type === "deposit" ? "default" : "outline"}>
-                              {TYPE_LABEL[t.type] ?? TRANSACTION_TYPE_LABELS[t.type]}
+                              {TRANSACTION_TYPE_LABELS[t.type]}
                             </Badge>
                           )}
                         </div>
@@ -348,7 +379,7 @@ export default async function AccountPage({
                         className={
                           "shrink-0 text-right font-medium tabular-nums " +
                           (t.amount >= 0
-                            ? "text-emerald-600 dark:text-emerald-400"
+                            ? "text-emerald-700 dark:text-emerald-400"
                             : "")
                         }
                       >
@@ -417,7 +448,7 @@ export default async function AccountPage({
                             />
                           ) : (
                             <Badge variant={t.type === "deposit" ? "default" : "outline"}>
-                              {TYPE_LABEL[t.type] ?? TRANSACTION_TYPE_LABELS[t.type]}
+                              {TRANSACTION_TYPE_LABELS[t.type]}
                             </Badge>
                           )}
                         </TableCell>
@@ -425,7 +456,7 @@ export default async function AccountPage({
                           className={
                             "text-right tabular-nums " +
                             (t.amount >= 0
-                              ? "text-emerald-600 dark:text-emerald-400"
+                              ? "text-emerald-700 dark:text-emerald-400"
                               : "")
                           }
                         >

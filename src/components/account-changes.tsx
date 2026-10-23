@@ -142,9 +142,11 @@ export function AccountChanges({
             </div>
           </>
         )}
-        <p className="mt-1 text-right text-xs text-muted-foreground">
-          {unchanged} unchanged
-        </p>
+        {unchanged > 0 && (
+          <p className="mt-1 text-right text-xs text-muted-foreground">
+            {unchanged} unchanged
+          </p>
+        )}
       </CardContent>
     </Card>
   );

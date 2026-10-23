@@ -11,6 +11,7 @@ import { MfaSettings } from "@/components/mfa-settings";
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
+  const isAdmin = user?.role === "admin";
   const providers = listProviders();
   let plaidConnections: {
     id: string;
@@ -62,7 +63,9 @@ export default async function SettingsPage() {
             <Badge className="ml-1 capitalize">{user?.role}</Badge>
           </div>
           <div className="text-muted-foreground">
-            {isDemoMode()
+            {user?.role === "viewer"
+              ? "You can view everything but can't change anything."
+              : isDemoMode()
               ? "Demo mode — authentication disabled until Supabase is configured."
               : "Supabase Auth with an authorized-user allowlist."}
           </div>
@@ -80,7 +83,7 @@ export default async function SettingsPage() {
         </Card>
       )}
 
-      {user?.role === "admin" && !isDemoMode() && (
+      {isAdmin && !isDemoMode() && (
         <Card>
           <CardHeader>
             <CardTitle>Plaid connections</CardTitle>
@@ -99,11 +102,12 @@ export default async function SettingsPage() {
           <PushNotifications
             configured={isPushConfigured() && !isDemoMode()}
             publicKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ""}
+            isAdmin={isAdmin}
           />
         </CardContent>
       </Card>
 
-      <Card>
+      {isAdmin && <Card>
         <CardHeader>
           <CardTitle>Financial integrations</CardTitle>
         </CardHeader>
@@ -123,7 +127,7 @@ export default async function SettingsPage() {
             secrets into the repo or chat.
           </p>
         </CardContent>
-      </Card>
+      </Card>}
 
       <Card>
         <CardHeader>

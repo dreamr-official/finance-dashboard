@@ -70,7 +70,7 @@ function Footer({ demoMode, role }: { demoMode: boolean; role: string }) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="size-10 md:size-7"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             aria-label="Toggle theme"
           >
@@ -82,7 +82,7 @@ function Footer({ demoMode, role }: { demoMode: boolean; role: string }) {
               type="submit"
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="size-10 md:size-7"
               aria-label="Sign out"
             >
               <LogOut className="h-4 w-4" />
@@ -111,7 +111,12 @@ export function AppSidebar({ demoMode, role }: { demoMode: boolean; role: string
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger
             render={
-              <Button variant="ghost" size="icon" aria-label="Open menu">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-10 md:size-8"
+                aria-label="Open menu"
+              >
                 <Menu className="h-5 w-5" />
               </Button>
             }

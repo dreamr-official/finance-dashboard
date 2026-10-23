@@ -67,7 +67,7 @@ describe("signed net worth", () => {
       netWorth: 200,
       assets: 300,
       liabilities: 100,
-      cash: 80,
+      cash: 100,
       investments: 200,
     });
   });
@@ -107,7 +107,7 @@ describe("signed net worth", () => {
     ]);
   });
 
-  it("adds today when no snapshots exist and does not duplicate today's snapshot", () => {
+  it("uses current balances for today when a snapshot already exists", () => {
     expect(netWorthSeries([account("cash", 120)], [], "2026-10-23")).toEqual([
       { date: "2026-10-23", value: 120 },
     ]);
@@ -117,7 +117,27 @@ describe("signed net worth", () => {
         [{ accountId: "cash", date: "2026-10-23", balance: 100 }],
         "2026-10-23",
       ),
-    ).toEqual([{ date: "2026-10-23", value: 100 }]);
+    ).toEqual([{ date: "2026-10-23", value: 120 }]);
+  });
+
+  it("uses current net worth as the header delta endpoint", () => {
+    const summary = computeNetWorth([account("cash", 120)]);
+    expect(
+      applyNetWorthChange(summary, [
+        { date: "2026-10-20", value: 100 },
+        { date: "2026-10-23", value: 110 },
+      ]).change,
+    ).toEqual({ day: 20, week: null, month: null, year: null });
+  });
+
+  it("keeps the latest demo snapshot equal to each account's current balance", () => {
+    const { accounts, snapshots } = demoDataset;
+    for (const account of accounts) {
+      const latest = snapshots
+        .filter((snapshot) => snapshot.accountId === account.id)
+        .sort((left, right) => right.date.localeCompare(left.date))[0];
+      expect(latest.balance).toBe(account.currentBalance);
+    }
   });
 
   it("does not inflate deltas when a new investment has only today's snapshot", () => {
@@ -431,8 +451,12 @@ describe("Plaid account mapping", () => {
     ["credit", "credit card", "credit_card"],
     ["investment", "ira", "traditional_ira"],
     ["investment", "traditional ira", "traditional_ira"],
+    ["investment", "sep ira", "traditional_ira"],
+    ["investment", "simple ira", "traditional_ira"],
     ["investment", "roth ira", "roth_ira"],
     ["investment", "401k", "401k"],
+    ["investment", "403b", "401k"],
+    ["investment", "457b", "401k"],
     ["loan", "student", "loan"],
   ])("maps %s/%s to %s", (type, subtype, expected) => {
     expect(plaidAccountType(type, subtype)).toBe(expected);
@@ -586,11 +610,14 @@ describe("summarizeActivity", () => {
       transaction("7", "checking", 30, "income"),
       transaction("8", "brokerage", -5000, "buy"),
       transaction("9", "brokerage", 4000, "sell"),
+      transaction("10", "checking", 15, "interest"),
+      transaction("11", "brokerage", 5, "dividend"),
     ];
 
     expect(summarizeActivity(transactions, accounts)).toEqual({
       moneyIn: 240,
       moneyOut: 25,
+      interestAndDividends: 20,
       contributions: 250,
     });
   });

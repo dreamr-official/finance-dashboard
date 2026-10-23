@@ -40,6 +40,21 @@ export interface ReconcileInvestmentFundingOptions {
   accountId?: string;
 }
 
+export function fundingDifferenceParts(
+  summary: Pick<InvestmentFundingSummary, "difference" | "missingArrival" | "missingSource">,
+) {
+  const centsFor = (issues: FundingIssue[]) =>
+    issues
+      .filter((issue) => issue.status === "in_transit")
+      .reduce((total, issue) => total + Math.round(Math.abs(issue.transaction.amount) * 100), 0);
+  const inTransitCents = centsFor(summary.missingArrival) - centsFor(summary.missingSource);
+  const differenceCents = Math.round(summary.difference * 100);
+  return {
+    inTransit: inTransitCents / 100,
+    needsReview: (differenceCents - inTransitCents) / 100,
+  };
+}
+
 interface FundingState {
   institutionId: string | null;
   institutionName: string;
