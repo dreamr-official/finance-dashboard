@@ -5,18 +5,7 @@ import { buildDividendNotification } from "@/lib/push-messages";
 import { sendPushToAll } from "@/lib/push";
 import { isRecentIncomeDate } from "@/lib/investments";
 import { rebuildAccountHistory } from "@/lib/backfill";
-
-export const ASSET_CLASS: Record<string, string> = {
-  checking: "cash",
-  savings: "cash",
-  cash: "cash",
-  brokerage: "investment",
-  roth_ira: "retirement",
-  traditional_ira: "retirement",
-  "401k": "retirement",
-  credit_card: "liability",
-  loan: "liability",
-};
+import { assetClassForType } from "@/lib/account-types";
 
 export interface SyncConnection {
   id: string;
@@ -67,33 +56,7 @@ export async function syncConnection(
     if (tokenError) throw new Error(tokenError.message);
     if (!token) throw new Error("Connection token is unavailable");
 
-    const { data: existingAccounts, error: accountLookupError } = await supabase
-      .from("accounts")
-      .select("id")
-      .eq("connection_id", conn.id);
-    if (accountLookupError) throw new Error(accountLookupError.message);
-    const existingAccountIds = (existingAccounts ?? []).map((account) => account.id as string);
-    let hasInvestmentTransactions = false;
-    if (existingAccountIds.length) {
-      const { count, error: investmentRowsError } = await supabase
-        .from("transactions")
-        .select("id", { count: "exact", head: true })
-        .in("account_id", existingAccountIds)
-        .like("provider_txn_id", "inv:%");
-      if (investmentRowsError) throw new Error(investmentRowsError.message);
-      hasInvestmentTransactions = (count ?? 0) > 0;
-    }
-    const investmentStart = new Date();
-    if (hasInvestmentTransactions) {
-      investmentStart.setUTCDate(investmentStart.getUTCDate() - 45);
-    } else {
-      investmentStart.setUTCMonth(investmentStart.getUTCMonth() - 24);
-    }
-    const sync = await provider.sync(
-      token,
-      conn.sync_cursor ?? undefined,
-      investmentStart.toISOString().slice(0, 10),
-    );
+    const sync = await provider.sync(token, conn.sync_cursor ?? undefined);
     const now = new Date().toISOString();
     const today = now.slice(0, 10);
     const accountIdByProviderId = new Map<string, string>();
@@ -136,7 +99,7 @@ export async function syncConnection(
             provider_acct_id: pa.providerAccountId,
             name: pa.name,
             type: pa.type,
-            asset_class: ASSET_CLASS[pa.type] ?? "other",
+            asset_class: assetClassForType(pa.type),
             mask: pa.mask ?? null,
             currency: pa.currency,
             current_balance: pa.balance,
@@ -165,48 +128,69 @@ export async function syncConnection(
       .eq("connection_id", conn.id);
     if (linkedAccountsError) throw new Error(linkedAccountsError.message);
     const allAccountIds = (linkedAccounts ?? []).map((a) => a.id as string);
+    let notice = sync.notice ?? null;
     if (sync.holdingsSynced) {
-      for (const account of linkedAccounts ?? []) {
-        if (account.asset_class !== "investment" && account.asset_class !== "retirement") {
-          continue;
+      try {
+        const grouped = new Map<string, (typeof sync.holdings)[number]>();
+        for (const holding of sync.holdings) {
+          const key = `${holding.providerAccountId}\u0000${holding.symbol}`;
+          const previous = grouped.get(key);
+          if (previous) {
+            previous.quantity += holding.quantity;
+            previous.value += holding.value;
+            previous.costBasis =
+              (previous.costBasis ?? 0) + (holding.costBasis ?? 0);
+            previous.price = previous.quantity ? previous.value / previous.quantity : 0;
+          } else {
+            grouped.set(key, { ...holding });
+          }
         }
-        const providerAccountId = [...accountIdByProviderId.entries()].find(
-          ([, accountId]) => accountId === account.id,
-        )?.[0];
-        if (!providerAccountId) continue;
-        const accountHoldings = sync.holdings.filter(
-          (holding) => holding.providerAccountId === providerAccountId,
-        );
-        const { data: existingHoldings, error: existingHoldingsError } = await supabase
-          .from("holdings")
-          .select("id,symbol")
-          .eq("account_id", account.id);
-        if (existingHoldingsError) throw new Error(existingHoldingsError.message);
-        const symbols = new Set(accountHoldings.map((holding) => holding.symbol));
-        const staleIds = (existingHoldings ?? [])
-          .filter((holding) => !symbols.has(holding.symbol))
-          .map((holding) => holding.id);
-        if (staleIds.length) {
-          const { error } = await supabase.from("holdings").delete().in("id", staleIds);
-          if (error) throw new Error(error.message);
-        }
-        if (accountHoldings.length) {
-          const { error } = await supabase.from("holdings").upsert(
-            accountHoldings.map((holding) => ({
-              account_id: account.id,
-              symbol: holding.symbol,
-              name: holding.name,
-              quantity: holding.quantity,
-              price: holding.price,
-              value: holding.value,
-              cost_basis: holding.costBasis ?? null,
-              asset_type: holding.assetType,
-              as_of: now,
-            })),
-            { onConflict: "account_id,symbol" },
+        for (const account of linkedAccounts ?? []) {
+          if (account.asset_class !== "investment" && account.asset_class !== "retirement") {
+            continue;
+          }
+          const providerAccountId = [...accountIdByProviderId.entries()].find(
+            ([, accountId]) => accountId === account.id,
+          )?.[0];
+          if (!providerAccountId) continue;
+          const accountHoldings = [...grouped.values()].filter(
+            (holding) => holding.providerAccountId === providerAccountId,
           );
-          if (error) throw new Error(error.message);
+          const { data: existingHoldings, error: existingHoldingsError } = await supabase
+            .from("holdings")
+            .select("id,symbol")
+            .eq("account_id", account.id);
+          if (existingHoldingsError) throw new Error(existingHoldingsError.message);
+          const symbols = new Set(accountHoldings.map((holding) => holding.symbol));
+          const staleIds = (existingHoldings ?? [])
+            .filter((holding) => !symbols.has(holding.symbol))
+            .map((holding) => holding.id);
+          if (staleIds.length) {
+            const { error } = await supabase.from("holdings").delete().in("id", staleIds);
+            if (error) throw new Error(error.message);
+          }
+          if (accountHoldings.length) {
+            const { error } = await supabase.from("holdings").upsert(
+              accountHoldings.map((holding) => ({
+                account_id: account.id,
+                symbol: holding.symbol,
+                name: holding.name,
+                quantity: holding.quantity,
+                price: holding.quantity ? holding.value / holding.quantity : 0,
+                value: holding.value,
+                cost_basis: holding.costBasis ?? null,
+                asset_type: holding.assetType,
+                as_of: now,
+              })),
+              { onConflict: "account_id,symbol" },
+            );
+            if (error) throw new Error(error.message);
+          }
         }
+      } catch (error) {
+        notice = `Couldn't save holdings: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`;
       }
     }
     const txnsByAccount = new Map<string, typeof sync.transactions>();
@@ -287,7 +271,7 @@ export async function syncConnection(
         status: "healthy",
         last_synced_at: now,
         last_error: null,
-        notice: sync.notice ?? null,
+        notice,
       })
       .eq("id", conn.id);
     if (connectionUpdateError) throw new Error(connectionUpdateError.message);

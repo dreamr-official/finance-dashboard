@@ -1,5 +1,6 @@
 import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
+import { deriveAccountTypeUpdate } from "@/lib/account-types";
 import { z } from "zod";
 
 const patchSchema = z.object({
@@ -36,7 +37,7 @@ export async function PATCH(
   const supabase = await createClient();
   const { data: account, error: accountError } = await supabase
     .from("accounts")
-    .select("is_manual,type")
+    .select("is_manual,type,asset_class,current_balance")
     .eq("id", id)
     .maybeSingle();
   if (accountError) return Response.json({ error: accountError.message }, { status: 500 });
@@ -44,13 +45,14 @@ export async function PATCH(
   if (!account.is_manual && body.data.current_balance !== undefined) {
     return Response.json({ error: "Bank-synced balances cannot be edited" }, { status: 400 });
   }
-  const update = { ...body.data };
-  if (
-    update.current_balance !== undefined &&
-    (account.type === "credit_card" || account.type === "loan")
-  ) {
-    update.current_balance = -Math.abs(update.current_balance);
-  }
+  const update = deriveAccountTypeUpdate(
+    {
+      type: account.type,
+      assetClass: account.asset_class,
+      currentBalance: Number(account.current_balance),
+    },
+    body.data,
+  );
   const { error } = await supabase.from("accounts").update(update).eq("id", id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
   if (update.current_balance !== undefined) {

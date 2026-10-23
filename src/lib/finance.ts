@@ -16,23 +16,21 @@ export function isContribution(t: Transaction) {
 }
 
 export function isWithdrawal(t: Transaction) {
-  return t.type === "withdrawal" || t.type === "fee";
+  return t.type === "withdrawal";
 }
 
 export function computeNetWorth(accounts: Account[]): NetWorthSummary {
-  const assets = accounts.filter((a) => !isLiability(a));
-  const liabilities = accounts.filter(isLiability);
   const sum = (xs: Account[]) => xs.reduce((s, a) => s + a.currentBalance, 0);
-  const cash = sum(assets.filter((a) => a.assetClass === "cash"));
+  const assets = sum(accounts.filter((a) => a.assetClass !== "liability"));
+  const liabilities = -sum(accounts.filter((a) => a.assetClass === "liability"));
+  const cash = sum(accounts.filter((a) => a.assetClass === "cash"));
   const investments = sum(
-    assets.filter((a) => a.assetClass === "investment" || a.assetClass === "retirement"),
+    accounts.filter((a) => a.assetClass === "investment" || a.assetClass === "retirement"),
   );
-  const assetTotal = sum(assets);
-  const liabTotal = Math.abs(sum(liabilities));
   return {
-    netWorth: assetTotal - liabTotal,
-    assets: assetTotal,
-    liabilities: liabTotal,
+    netWorth: sum(accounts),
+    assets,
+    liabilities,
     cash,
     investments,
     change: { day: 0, week: 0, month: 0, year: 0 },
@@ -60,12 +58,12 @@ export function netWorthSeries(
     let total = 0;
     for (const a of accounts) {
       const snaps = byAccount.get(a.id) ?? [];
-      let v = snaps[0]?.balance ?? last[a.id];
+      let v = snaps.length ? 0 : last[a.id];
       for (const snapshot of snaps) {
         if (snapshot.date > d) break;
         v = snapshot.balance;
       }
-      total += a.assetClass === "liability" ? -Math.abs(v) : v;
+      total += v;
     }
     return { date: d, value: total };
   });
@@ -92,8 +90,7 @@ export function applyNetWorthChange(
   return summary;
 }
 
-/** Roth IRA contributions for a tax year across all Roth accounts.
- *  Limit is configurable via ROTH_LIMITS env/JSON (see settings). */
+/** Roth IRA contributions and withdrawals for a tax year across Roth accounts. */
 export function rothContributions(
   accounts: Account[],
   transactions: Transaction[],
@@ -105,13 +102,14 @@ export function rothContributions(
   );
   const deposits = txns.filter(isContribution).reduce((s, t) => s + Math.abs(t.amount), 0);
   const withdrawals = txns.filter(isWithdrawal).reduce((s, t) => s + Math.abs(t.amount), 0);
-  return { deposits, withdrawals, net: deposits - withdrawals };
+  return { deposits, withdrawals };
 }
 
 export const DEFAULT_ROTH_LIMITS: Record<number, number> = {
   2024: 7000,
   2025: 7000,
   2026: 7500,
+  2027: 7500,
 };
 
 export function monthlyEquivalent(amount: number, frequency: string) {

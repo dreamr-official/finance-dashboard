@@ -41,9 +41,12 @@ export async function POST(request: Request) {
   if (accounts?.length !== 2) {
     return Response.json({ error: "Account not found" }, { status: 404 });
   }
+  if (accounts.every((account) => !account.is_manual)) {
+    return Response.json({ error: "Transfers need at least one manual account" }, { status: 409 });
+  }
 
   const pairId = randomUUID();
-  const legs = buildTransferLegs(
+  const allLegs = buildTransferLegs(
     {
       fromAccountId: body.data.from_account_id,
       toAccountId: body.data.to_account_id,
@@ -53,6 +56,8 @@ export async function POST(request: Request) {
     },
     pairId,
   );
+  const manualIds = new Set(accounts.filter((account) => account.is_manual).map((account) => account.id));
+  const legs = allLegs.filter((leg) => manualIds.has(leg.account_id));
   const { data: transactions, error: transactionError } = await supabase
     .from("transactions")
     .insert(legs)

@@ -119,8 +119,7 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent className="text-sm">
           <p className="mb-2 text-muted-foreground">
-            Per-tax-year limits are stored in <code>app_settings.roth_limits</code>.
-            Current defaults:
+            IRS limits currently used by the app:
           </p>
           <ul className="space-y-1 tabular-nums">
             {Object.entries(DEFAULT_ROTH_LIMITS).map(([y, v]) => (

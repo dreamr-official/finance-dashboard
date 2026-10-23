@@ -172,7 +172,9 @@ export function ImportCsvDialog({ account }: { account: Account }) {
       setResult(`Error: ${typeof data.error === "string" ? data.error : "failed"}`);
       return;
     }
-    setResult(`Imported ${data.imported} transactions (re-importing is safe).`);
+    setResult(
+      `Imported ${data.imported} transactions; skipped ${data.skipped} invalid rows (re-importing is safe).`,
+    );
     router.refresh();
   }
 

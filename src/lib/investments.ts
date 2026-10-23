@@ -5,6 +5,7 @@ export function mapPlaidInvestmentType(
   type?: string | null,
   subtype?: string | null,
   plaidAmount = 0,
+  name?: string | null,
 ): string {
   const normalizedType = type?.trim().toLowerCase() ?? "";
   const normalizedSubtype = subtype?.trim().toLowerCase() ?? "";
@@ -21,6 +22,7 @@ export function mapPlaidInvestmentType(
     return "interest";
   }
   if (normalizedType.includes("fee") || normalizedSubtype.includes("fee")) return "fee";
+  if (/contribut/i.test(name ?? "") && plaidAmount < 0) return "deposit";
   if (labels.has("transfer")) {
     return plaidAmount > 0 ? "transfer_out" : plaidAmount < 0 ? "transfer_in" : "other";
   }
@@ -46,6 +48,7 @@ export function convertPlaidInvestmentTransaction(transaction: {
       transaction.type,
       transaction.subtype,
       transaction.amount,
+      transaction.name,
     ),
     pending: false,
   };

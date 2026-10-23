@@ -1,19 +1,7 @@
 import { authErrorResponse, requireAdmin } from "@/lib/auth";
 import { isDemoMode } from "@/lib/env";
+import { ASSET_CLASS } from "@/lib/account-types";
 import { z } from "zod";
-
-const ASSET_CLASS_BY_TYPE: Record<string, string> = {
-  checking: "cash",
-  savings: "cash",
-  cash: "cash",
-  brokerage: "investment",
-  roth_ira: "retirement",
-  traditional_ira: "retirement",
-  "401k": "retirement",
-  credit_card: "liability",
-  loan: "liability",
-  other: "other",
-};
 
 const schema = z.object({
   name: z.string().min(1).max(100),
@@ -86,7 +74,7 @@ export async function POST(req: Request) {
       institution_id: institutionId,
       name: body.data.name,
       type: body.data.type,
-      asset_class: ASSET_CLASS_BY_TYPE[body.data.type],
+      asset_class: ASSET_CLASS[body.data.type],
       mask: body.data.mask,
       current_balance: openingBalance,
       is_manual: true,

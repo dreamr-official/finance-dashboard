@@ -2,6 +2,22 @@ import { createClient } from "../supabase/server";
 import type { Dataset } from "./types";
 import type { Account, Transaction } from "../types";
 
+async function fetchAll<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<{
+    data: T[] | null;
+    error: { message: string } | null;
+  }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await fetchPage(from, from + 999);
+    if (error) throw new Error(`Supabase query failed: ${error.message}`);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
+}
+
 /**
  * Reads the dataset from Supabase. RLS already restricts rows to the
  * allowlisted caller; this maps DB rows to domain types.
@@ -9,28 +25,41 @@ import type { Account, Transaction } from "../types";
 export async function fetchDataset(): Promise<Dataset> {
   const supabase = await createClient();
   const [inst, accts, snaps, txns, holds, subs, connections] = await Promise.all([
-    supabase.from("institutions").select("*"),
-    supabase.from("accounts").select("*"),
-    supabase.from("balance_snapshots").select("*").order("date"),
-    supabase.from("transactions").select("*").order("date", { ascending: false }).limit(5000),
-    supabase.from("holdings").select("*"),
-    supabase.from("subscriptions").select("*"),
-    supabase.from("connection_notices").select("id,notice"),
+    fetchAll((from, to) => supabase.from("institutions").select("*").order("id").range(from, to)),
+    fetchAll((from, to) => supabase.from("accounts").select("*").order("id").range(from, to)),
+    fetchAll((from, to) =>
+      supabase.from("balance_snapshots").select("*").order("date").range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase
+        .from("transactions")
+        .select("*")
+        .order("date", { ascending: false })
+        .range(from, to),
+    ),
+    fetchAll((from, to) => supabase.from("holdings").select("*").order("id").range(from, to)),
+    fetchAll((from, to) =>
+      supabase.from("subscriptions").select("*").order("id").range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase
+        .from("connection_notices")
+        .select("id,notice")
+        .order("id")
+        .range(from, to),
+    ),
   ]);
-  for (const r of [inst, accts, snaps, txns, holds, subs, connections]) {
-    if (r.error) throw new Error(`Supabase query failed: ${r.error.message}`);
-  }
   const noticeByConnectionId = new Map(
-    (connections.data ?? []).map((connection) => [connection.id, connection.notice]),
+    connections.map((connection) => [connection.id, connection.notice]),
   );
   return {
-    institutions: (inst.data ?? []).map((i) => ({
+    institutions: inst.map((i) => ({
       id: i.id,
       name: i.name,
       provider: i.provider,
       logoUrl: i.logo_url ?? undefined,
     })),
-    accounts: (accts.data ?? []).map(
+    accounts: accts.map(
       (a): Account => ({
         id: a.id,
         institutionId: a.institution_id,
@@ -48,12 +77,12 @@ export async function fetchDataset(): Promise<Dataset> {
           : null,
       }),
     ),
-    snapshots: (snaps.data ?? []).map((s) => ({
+    snapshots: snaps.map((s) => ({
       accountId: s.account_id,
       date: s.date,
       balance: Number(s.balance),
     })),
-    transactions: (txns.data ?? []).map(
+    transactions: txns.map(
       (t): Transaction => ({
         id: t.id,
         accountId: t.account_id,
@@ -67,7 +96,7 @@ export async function fetchDataset(): Promise<Dataset> {
         category: t.category ?? undefined,
       }),
     ),
-    holdings: (holds.data ?? []).map((h) => ({
+    holdings: holds.map((h) => ({
       id: h.id,
       accountId: h.account_id,
       symbol: h.symbol,
@@ -78,7 +107,7 @@ export async function fetchDataset(): Promise<Dataset> {
       costBasis: h.cost_basis == null ? undefined : Number(h.cost_basis),
       assetType: h.asset_type,
     })),
-    subscriptions: (subs.data ?? []).map((s) => ({
+    subscriptions: subs.map((s) => ({
       id: s.id,
       name: s.name,
       logoUrl: s.logo_url ?? undefined,
