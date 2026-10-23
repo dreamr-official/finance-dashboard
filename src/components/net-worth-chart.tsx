@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
+import { fmtChartTick, fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const RANGES = [
@@ -32,10 +32,19 @@ export function NetWorthChart({
     if (r.days === Infinity) return data;
     const lastDate = data[data.length - 1]?.date;
     if (!lastDate) return data;
-    const cutoff = new Date(lastDate);
-    cutoff.setDate(cutoff.getDate() - r.days);
-    return data.filter((p) => new Date(p.date) >= cutoff);
+    const cutoff = new Date(`${lastDate}T00:00:00.000Z`);
+    cutoff.setUTCDate(cutoff.getUTCDate() - r.days);
+    const cutoffDate = cutoff.toISOString().slice(0, 10);
+    return data.filter((point) => point.date >= cutoffDate);
   }, [data, range]);
+  const firstDate = filtered[0]?.date;
+  const lastDate = filtered[filtered.length - 1]?.date;
+  const spanDays =
+    firstDate && lastDate
+      ? (Date.parse(`${lastDate}T00:00:00.000Z`) -
+          Date.parse(`${firstDate}T00:00:00.000Z`)) /
+        86400000
+      : 0;
 
   return (
     <div>
@@ -67,9 +76,7 @@ export function NetWorthChart({
             <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
             <XAxis
               dataKey="date"
-              tickFormatter={(v) =>
-                new Date(v).toLocaleDateString("en-US", { month: "short", year: "2-digit" })
-              }
+              tickFormatter={(value) => fmtChartTick(String(value), spanDays)}
               tick={{ fontSize: 11 }}
               className="text-muted-foreground"
               minTickGap={48}

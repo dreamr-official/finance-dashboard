@@ -9,13 +9,21 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
+import { fmtChartTick, fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
 
 export function ContributionsChart({
   data,
 }: {
   data: { date: string; value: number }[];
 }) {
+  const firstDate = data[0]?.date;
+  const lastDate = data[data.length - 1]?.date;
+  const spanDays =
+    firstDate && lastDate
+      ? (Date.parse(`${lastDate}T00:00:00.000Z`) -
+          Date.parse(`${firstDate}T00:00:00.000Z`)) /
+        86400000
+      : 0;
   return (
     <div className="h-64 w-full">
       <ResponsiveContainer>
@@ -23,9 +31,7 @@ export function ContributionsChart({
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
           <XAxis
             dataKey="date"
-            tickFormatter={(value) =>
-              new Date(value).toLocaleDateString("en-US", { month: "short", year: "2-digit" })
-            }
+            tickFormatter={(value) => fmtChartTick(String(value), spanDays)}
             tick={{ fontSize: 11 }}
             minTickGap={48}
             axisLine={false}

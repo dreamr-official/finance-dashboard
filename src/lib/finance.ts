@@ -4,15 +4,10 @@ import {
   NetWorthSummary,
   Transaction,
 } from "./types";
+export { rothContributions } from "./contributions";
 
 export function isLiability(a: Account) {
   return a.assetClass === "liability" || a.currentBalance < 0;
-}
-
-/** Contributions = external money in. Transfers between own accounts and
- *  buys/sells inside an investment account never count. */
-export function isContribution(t: Transaction) {
-  return t.type === "deposit";
 }
 
 export function isWithdrawal(t: Transaction) {
@@ -41,6 +36,7 @@ export function computeNetWorth(accounts: Account[]): NetWorthSummary {
 export function netWorthSeries(
   accounts: Account[],
   snapshots: BalanceSnapshot[],
+  today?: string,
 ): { date: string; value: number }[] {
   const byAccount = new Map<string, BalanceSnapshot[]>();
   for (const s of snapshots) {
@@ -54,7 +50,7 @@ export function netWorthSeries(
   const dates = [...new Set(snapshots.map((s) => s.date))].sort();
   const last: Record<string, number> = {};
   for (const a of accounts) last[a.id] = a.currentBalance;
-  return dates.map((d) => {
+  const series = dates.map((d) => {
     let total = 0;
     for (const a of accounts) {
       const snaps = byAccount.get(a.id) ?? [];
@@ -67,6 +63,60 @@ export function netWorthSeries(
     }
     return { date: d, value: total };
   });
+  if (today && accounts.length > 0 && (!dates.length || today > dates[dates.length - 1])) {
+    series.push({
+      date: today,
+      value: accounts.reduce((total, account) => total + account.currentBalance, 0),
+    });
+  }
+  return series;
+}
+
+export interface AccountChange {
+  account: Account;
+  start: number | null;
+  end: number;
+  change: number | null;
+  pct: number | null;
+  isNew: boolean;
+}
+
+export function accountChanges(
+  accounts: Account[],
+  snapshots: BalanceSnapshot[],
+  today: string,
+  days: number,
+): AccountChange[] {
+  const cutoff = new Date(`${today}T00:00:00.000Z`);
+  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
+  const snapshotByAccount = new Map<string, BalanceSnapshot>();
+  for (const snapshot of snapshots) {
+    if (snapshot.date > cutoffDate) continue;
+    const previous = snapshotByAccount.get(snapshot.accountId);
+    if (!previous || snapshot.date > previous.date) {
+      snapshotByAccount.set(snapshot.accountId, snapshot);
+    }
+  }
+  return accounts
+    .map((account): AccountChange => {
+      const start = snapshotByAccount.get(account.id)?.balance ?? null;
+      const change = start === null ? null : account.currentBalance - start;
+      return {
+        account,
+        start,
+        end: account.currentBalance,
+        change,
+        pct: start === null || start === 0 ? null : (change ?? 0) / Math.abs(start),
+        isNew: start === null,
+      };
+    })
+    .sort(
+      (left, right) =>
+        Number(left.isNew) - Number(right.isNew) ||
+        Math.abs(right.change ?? 0) - Math.abs(left.change ?? 0) ||
+        left.account.name.localeCompare(right.account.name),
+    );
 }
 
 export function applyNetWorthChange(
@@ -91,23 +141,6 @@ export function applyNetWorthChange(
     year: lookup(365),
   };
   return summary;
-}
-
-/** Roth IRA contributions and withdrawals for a tax year across Roth accounts. */
-export function rothContributions(
-  accounts: Account[],
-  transactions: Transaction[],
-  taxYear: number,
-) {
-  const rothIds = new Set(accounts.filter((a) => a.type === "roth_ira").map((a) => a.id));
-  const txns = transactions.filter(
-    (t) =>
-      rothIds.has(t.accountId) &&
-      (t.taxYear ?? Number(t.date.slice(0, 4))) === taxYear,
-  );
-  const deposits = txns.filter(isContribution).reduce((s, t) => s + Math.abs(t.amount), 0);
-  const withdrawals = txns.filter(isWithdrawal).reduce((s, t) => s + Math.abs(t.amount), 0);
-  return { deposits, withdrawals };
 }
 
 export const DEFAULT_ROTH_LIMITS: Record<number, number> = {
