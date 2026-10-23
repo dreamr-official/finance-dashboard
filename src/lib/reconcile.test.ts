@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fundingDifferenceParts, reconcileInvestmentFunding } from "./reconcile";
+import { buildTransferReport } from "./transfer-match";
 import type { Account, Institution, Transaction } from "./types";
 
 function account(
@@ -80,6 +81,199 @@ describe("reconcileInvestmentFunding", () => {
       difference: 0,
       perAccount: [{ account: fidelityRoth, arrived: 1500 }],
     });
+  });
+
+  it("scopes investment filters to one account and separates unassigned institution outflows", () => {
+    const fidelityBrokerage = account("fidelity-brokerage", "fidelity", "investment", "brokerage");
+    const accounts = [bank, fidelityRoth, fidelityBrokerage];
+    const txns = [
+      transaction("roth-out", bank.id, "2026-10-20", -1000, "transfer_out", "Transfer", "roth"),
+      transaction(
+        "roth-in",
+        fidelityRoth.id,
+        "2026-10-20",
+        1000,
+        "transfer_in",
+        "Transfer",
+        "roth",
+      ),
+      transaction(
+        "brokerage-out",
+        bank.id,
+        "2026-10-20",
+        -500,
+        "transfer_out",
+        "Transfer",
+        "brokerage",
+      ),
+      transaction(
+        "brokerage-in",
+        fidelityBrokerage.id,
+        "2026-10-20",
+        500,
+        "transfer_in",
+        "Transfer",
+        "brokerage",
+      ),
+      transaction(
+        "unassigned",
+        bank.id,
+        "2026-10-22",
+        -475,
+        "transfer_out",
+        "FID BKG SVC LLC MONEYLINE",
+      ),
+      transaction(
+        "roth-unknown-source",
+        fidelityRoth.id,
+        "2026-10-01",
+        200,
+        "transfer_in",
+        "Transfer from outside account",
+      ),
+      transaction(
+        "brokerage-unknown-source",
+        fidelityBrokerage.id,
+        "2026-10-01",
+        300,
+        "transfer_in",
+        "Transfer from outside account",
+      ),
+    ];
+    const [summary] = reconcileInvestmentFunding(accounts, [fidelity], txns, {
+      today,
+      accountId: fidelityRoth.id,
+    });
+
+    expect(reconcileInvestmentFunding(accounts, [fidelity], txns, {
+      today,
+      accountId: fidelityRoth.id,
+    })).toHaveLength(1);
+    expect(summary).toMatchObject({
+      institutionName: "Fidelity",
+      sentFromBanks: 1000,
+      arrived: 1200,
+      difference: -200,
+      perAccount: [{ account: fidelityRoth, arrived: 1200 }],
+      missingArrival: [],
+      missingSource: [{ transaction: txns[5], account: fidelityRoth, status: "needs_review" }],
+      unassignedBankOutflows: { count: 1, total: 475 },
+    });
+    expect(fundingDifferenceParts(summary)).toEqual({ inTransit: 0, needsReview: 200 });
+  });
+
+  it("scopes cash filters to that bank's outflows and their investment arrivals", () => {
+    const savings = account("savings", "bank", "cash", "savings");
+    const fidelityBrokerage = account("fidelity-brokerage", "fidelity", "investment", "brokerage");
+    const accounts = [bank, savings, fidelityRoth, fidelityBrokerage];
+    const txns = [
+      transaction("checking-out", bank.id, "2026-10-20", -1000, "transfer_out", "Transfer", "checking"),
+      transaction(
+        "checking-in",
+        fidelityRoth.id,
+        "2026-10-20",
+        1000,
+        "transfer_in",
+        "Transfer",
+        "checking",
+      ),
+      transaction("savings-out", savings.id, "2026-10-20", -500, "transfer_out", "Transfer", "savings"),
+      transaction(
+        "savings-in",
+        fidelityBrokerage.id,
+        "2026-10-20",
+        500,
+        "transfer_in",
+        "Transfer",
+        "savings",
+      ),
+      transaction(
+        "checking-unmatched",
+        bank.id,
+        "2026-10-22",
+        -475,
+        "transfer_out",
+        "Fidelity transfer",
+      ),
+      transaction(
+        "roth-unknown-source",
+        fidelityRoth.id,
+        "2026-10-01",
+        200,
+        "transfer_in",
+        "Transfer from outside account",
+      ),
+      transaction("withdrawal-out", fidelityRoth.id, "2026-10-20", -100, "transfer_out", "Transfer", "withdrawal"),
+      transaction("withdrawal-in", bank.id, "2026-10-20", 100, "transfer_in", "Transfer", "withdrawal"),
+    ];
+    const [summary] = reconcileInvestmentFunding(accounts, [fidelity], txns, {
+      today,
+      accountId: bank.id,
+    });
+
+    expect(summary).toMatchObject({
+      sentFromBanks: 1475,
+      arrived: 1000,
+      missingArrival: [{ transaction: txns[4], account: bank, status: "in_transit" }],
+      missingSource: [],
+      withdrawnToBanks: 0,
+      arrivedInBanks: 0,
+    });
+    expect(summary.perAccount.find((item) => item.account.id === fidelityRoth.id)?.arrived).toBe(
+      1000,
+    );
+    expect(fundingDifferenceParts(summary)).toEqual({ inTransit: 475, needsReview: 0 });
+  });
+
+  it.each([
+    ["investment", "fidelity-roth"],
+    ["cash", "checking"],
+  ] as const)("keeps funding issues inside the filtered transfer report for a %s filter", (kind, accountId) => {
+    const filteredAccounts = kind === "investment" ? baseAccounts : [bank, fidelityRoth];
+    const txns = [
+      transaction(
+        "unmatched-out",
+        bank.id,
+        "2026-10-22",
+        -250,
+        "transfer_out",
+        "Fidelity transfer",
+      ),
+      transaction(
+        "unmatched-in",
+        fidelityRoth.id,
+        "2026-10-01",
+        125,
+        "transfer_in",
+        "Transfer from outside account",
+      ),
+    ];
+    const options = { today, from: "2026-10-01", to: "2026-10-23", accountId };
+    const funding = reconcileInvestmentFunding(filteredAccounts, [fidelity], txns, options);
+    const report = buildTransferReport(txns, filteredAccounts, options);
+    const reportIssues = [...report.unmatchedOut, ...report.unmatchedIn];
+    const reportIssuesById = new Map(reportIssues.map((issue) => [issue.transaction.id, issue]));
+    const fundingIssues = funding.flatMap((group) => [
+      ...group.missingArrival,
+      ...group.missingSource,
+    ]);
+
+    for (const issue of fundingIssues) {
+      const reportIssue = reportIssuesById.get(issue.transaction.id);
+      expect(reportIssue).toBeDefined();
+      expect(reportIssue?.status).toBe(
+        issue.status === "in_transit" ? "pending" : "needs_review",
+      );
+    }
+
+    const reviewAmount = fundingIssues
+      .filter((issue) => issue.status === "needs_review")
+      .reduce((sum, issue) => sum + Math.abs(issue.transaction.amount), 0);
+    const transitAmount = fundingIssues
+      .filter((issue) => issue.status === "in_transit")
+      .reduce((sum, issue) => sum + Math.abs(issue.transaction.amount), 0);
+    expect(reviewAmount).toBeLessThanOrEqual(report.summary.needsReview.total);
+    expect(transitAmount).toBeLessThanOrEqual(report.summary.pending.total);
   });
 
   it("attributes Fidelity Moneyline outflows and distinguishes transit from review", () => {
@@ -207,6 +401,7 @@ describe("reconcileInvestmentFunding", () => {
     expect(summary.sentFromBanks).toBe(0);
     expect(summary.arrived).toBe(300);
     expect(summary.difference).toBe(-300);
+    expect(fundingDifferenceParts(summary)).toEqual({ inTransit: 0, needsReview: 0 });
   });
 
   it("tracks reverse investment-to-bank transfers", () => {

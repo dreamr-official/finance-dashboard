@@ -20,6 +20,11 @@ export interface FundingAccountTotal {
   arrived: number;
 }
 
+export interface UnassignedBankOutflows {
+  count: number;
+  total: number;
+}
+
 export interface InvestmentFundingSummary {
   institutionId: string | null;
   institutionName: string;
@@ -31,6 +36,7 @@ export interface InvestmentFundingSummary {
   perAccount: FundingAccountTotal[];
   missingArrival: FundingIssue[];
   missingSource: FundingIssue[];
+  unassignedBankOutflows: UnassignedBankOutflows;
 }
 
 export interface ReconcileInvestmentFundingOptions {
@@ -41,17 +47,21 @@ export interface ReconcileInvestmentFundingOptions {
 }
 
 export function fundingDifferenceParts(
-  summary: Pick<InvestmentFundingSummary, "difference" | "missingArrival" | "missingSource">,
+  summary: Pick<InvestmentFundingSummary, "missingArrival" | "missingSource">,
 ) {
-  const centsFor = (issues: FundingIssue[]) =>
+  const centsFor = (issues: FundingIssue[], status: FundingIssue["status"]) =>
     issues
-      .filter((issue) => issue.status === "in_transit")
+      .filter((issue) => issue.status === status)
       .reduce((total, issue) => total + Math.round(Math.abs(issue.transaction.amount) * 100), 0);
-  const inTransitCents = centsFor(summary.missingArrival) - centsFor(summary.missingSource);
-  const differenceCents = Math.round(summary.difference * 100);
   return {
-    inTransit: inTransitCents / 100,
-    needsReview: (differenceCents - inTransitCents) / 100,
+    inTransit:
+      (centsFor(summary.missingArrival, "in_transit") +
+        centsFor(summary.missingSource, "in_transit")) /
+      100,
+    needsReview:
+      (centsFor(summary.missingArrival, "needs_review") +
+        centsFor(summary.missingSource, "needs_review")) /
+      100,
   };
 }
 
@@ -65,6 +75,8 @@ interface FundingState {
   perAccountCents: Map<string, number>;
   missingArrival: FundingIssue[];
   missingSource: FundingIssue[];
+  unassignedBankOutflowCount: number;
+  unassignedBankOutflowCents: number;
 }
 
 const INVESTMENT_CLASSES = new Set<Account["assetClass"]>(["investment", "retirement"]);
@@ -128,6 +140,10 @@ export function reconcileInvestmentFunding(
   options: ReconcileInvestmentFundingOptions,
 ): InvestmentFundingSummary[] {
   const institutionsById = new Map(institutions.map((institution) => [institution.id, institution]));
+  const selectedAccount = accounts.find((account) => account.id === options.accountId);
+  const selectedInvestment =
+    selectedAccount && isInvestment(selectedAccount) ? selectedAccount : undefined;
+  const selectedCash = selectedAccount && isCash(selectedAccount) ? selectedAccount : undefined;
   const investmentAccounts = accounts.filter(isInvestment);
   const investmentAccountsByInstitution = new Map<string, Account[]>();
   for (const account of investmentAccounts) {
@@ -138,11 +154,13 @@ export function reconcileInvestmentFunding(
 
   const states = new Map<string, FundingState>();
   const createState = (institutionId: string, name: string) => {
+    const accountsForInstitution =
+      investmentAccountsByInstitution.get(institutionId) ?? [];
+    const visibleAccounts = selectedInvestment
+      ? accountsForInstitution.filter((account) => account.id === selectedInvestment.id)
+      : accountsForInstitution;
     const perAccountCents = new Map(
-      (investmentAccountsByInstitution.get(institutionId) ?? []).map((account) => [
-        account.id,
-        0,
-      ]),
+      visibleAccounts.map((account) => [account.id, 0]),
     );
     const state: FundingState = {
       institutionId,
@@ -154,6 +172,8 @@ export function reconcileInvestmentFunding(
       perAccountCents,
       missingArrival: [],
       missingSource: [],
+      unassignedBankOutflowCount: 0,
+      unassignedBankOutflowCents: 0,
     };
     states.set(institutionId, state);
     return state;
@@ -169,11 +189,17 @@ export function reconcileInvestmentFunding(
 
   for (const pair of matched.pairs) {
     if (isCash(pair.from) && isInvestment(pair.to)) {
-      const state = stateForAccount(pair.to);
       const accountMatches =
-        !options.accountId || pair.from.id === options.accountId || pair.to.id === options.accountId;
-      if (accountMatches && inRange(pair.outDate, options)) state.sentCents += cents(pair.amount);
-      if (accountMatches && inRange(pair.inDate, options)) {
+        !options.accountId ||
+        (selectedInvestment
+          ? pair.to.id === selectedInvestment.id
+          : selectedCash
+            ? pair.from.id === selectedCash.id
+            : false);
+      if (!accountMatches) continue;
+      const state = stateForAccount(pair.to);
+      if (inRange(pair.outDate, options)) state.sentCents += cents(pair.amount);
+      if (inRange(pair.inDate, options)) {
         const amount = cents(pair.amount);
         state.arrivedCents += amount;
         state.perAccountCents.set(
@@ -182,13 +208,15 @@ export function reconcileInvestmentFunding(
         );
       }
     } else if (isInvestment(pair.from) && isCash(pair.to)) {
-      const state = stateForAccount(pair.from);
       const accountMatches =
-        !options.accountId || pair.from.id === options.accountId || pair.to.id === options.accountId;
-      if (accountMatches && inRange(pair.outDate, options)) {
+        !options.accountId ||
+        (selectedInvestment && pair.from.id === selectedInvestment.id);
+      if (!accountMatches) continue;
+      const state = stateForAccount(pair.from);
+      if (inRange(pair.outDate, options)) {
         state.withdrawnCents += cents(pair.amount);
       }
-      if (accountMatches && inRange(pair.inDate, options)) {
+      if (inRange(pair.inDate, options)) {
         state.arrivedInBanksCents += cents(pair.amount);
       }
     }
@@ -208,6 +236,8 @@ export function reconcileInvestmentFunding(
         perAccountCents: new Map(),
         missingArrival: [],
         missingSource: [],
+        unassignedBankOutflowCount: 0,
+        unassignedBankOutflowCents: 0,
       };
       states.set("__unknown_destination", state);
     }
@@ -224,17 +254,20 @@ export function reconcileInvestmentFunding(
       const matchingAccounts = institution
         ? investmentAccountsByInstitution.get(institution.id) ?? []
         : [];
-      if (
-        options.accountId &&
-        account.id !== options.accountId &&
-        !matchingAccounts.some((investmentAccount) => investmentAccount.id === options.accountId)
-      ) {
+      const amount = cents(transaction.amount);
+
+      if (selectedInvestment) {
+        if (institution?.id !== selectedInvestment.institutionId) continue;
+        const state = stateForAccount(selectedInvestment);
+        state.unassignedBankOutflowCount += 1;
+        state.unassignedBankOutflowCents += amount;
         continue;
       }
+      if (options.accountId && (!selectedCash || account.id !== selectedCash.id)) continue;
+
       const matchingAccount = matchingAccounts[0];
       if (institution && !matchingAccount) continue;
       const state = institution ? stateForAccount(matchingAccount!) : unknownState();
-      const amount = cents(transaction.amount);
       state.sentCents += amount;
       state.missingArrival.push({
         transaction,
@@ -249,7 +282,7 @@ export function reconcileInvestmentFunding(
         (transaction.type !== "deposit" && transaction.type !== "transfer_in") ||
         NON_BANK_DEPOSIT_PATTERNS.some((pattern) => pattern.test(transaction.name)) ||
         !inRange(transaction.date, options) ||
-        (options.accountId && account.id !== options.accountId)
+        (options.accountId && (!selectedInvestment || account.id !== selectedInvestment.id))
       ) {
         continue;
       }
@@ -266,7 +299,10 @@ export function reconcileInvestmentFunding(
     }
 
     if (isInvestment(account) && direction === "out") {
-      if (!inRange(transaction.date, options) || (options.accountId && account.id !== options.accountId)) {
+      if (
+        !inRange(transaction.date, options) ||
+        (options.accountId && (!selectedInvestment || account.id !== selectedInvestment.id))
+      ) {
         continue;
       }
       stateForAccount(account).withdrawnCents += cents(transaction.amount);
@@ -280,11 +316,7 @@ export function reconcileInvestmentFunding(
         .find((value) => matchesInstitution(transaction.name, value.name));
       if (!institution) continue;
       const matchingAccounts = investmentAccountsByInstitution.get(institution.id) ?? [];
-      if (
-        options.accountId &&
-        account.id !== options.accountId &&
-        !matchingAccounts.some((investmentAccount) => investmentAccount.id === options.accountId)
-      ) {
+      if (options.accountId) {
         continue;
       }
       const matchingAccount = matchingAccounts[0];
@@ -302,7 +334,8 @@ export function reconcileInvestmentFunding(
         state.withdrawnCents ||
         state.arrivedInBanksCents ||
         state.missingArrival.length ||
-        state.missingSource.length,
+        state.missingSource.length ||
+        state.unassignedBankOutflowCount,
     )
     .map((state) => ({
       institutionId: state.institutionId,
@@ -320,6 +353,10 @@ export function reconcileInvestmentFunding(
         .filter((value) => Boolean(value.account)),
       missingArrival: state.missingArrival,
       missingSource: state.missingSource,
+      unassignedBankOutflows: {
+        count: state.unassignedBankOutflowCount,
+        total: state.unassignedBankOutflowCents / 100,
+      },
     }))
     .sort((left, right) => {
       if (left.institutionId === null) return 1;

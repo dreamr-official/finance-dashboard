@@ -41,7 +41,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           href={href}
           onClick={onNavigate}
           className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            "flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors max-md:min-h-10",
             pathname.startsWith(href)
               ? "bg-accent text-foreground"
               : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",

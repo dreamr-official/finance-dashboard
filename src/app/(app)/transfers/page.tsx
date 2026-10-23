@@ -15,6 +15,7 @@ import { fmtCurrency, fmtDate } from "@/lib/format";
 import { reconcileInvestmentFunding } from "@/lib/reconcile";
 import { fundingDifferenceParts } from "@/lib/reconcile";
 import type { FundingIssue, InvestmentFundingSummary } from "@/lib/reconcile";
+import { transferHeadline } from "@/lib/transfer-headline";
 import { sortAccountsByClass } from "@/lib/account-types";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,19 +84,15 @@ export default async function TransfersPage({
   const visiblePairs = report.pairs.slice(0, MAX_PAIRS);
   const institutionsById = new Map(institutions.map((institution) => [institution.id, institution.name]));
   const sortedAccounts = sortAccountsByClass(accounts, institutionsById);
-  const needsReviewAmount = needsReview.reduce((sum, leg) => sum + leg.amount, 0);
   const { summary } = report;
+  const clearAccountHref = `/transfers?${new URLSearchParams({ from, to }).toString()}`;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Transfers</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {needsReview.length
-            ? `Everything that left your accounts arrived, except ${needsReview.length} ${
-                needsReview.length === 1 ? "item" : "items"
-              } to check (${fmtCurrency(needsReviewAmount)}).`
-            : "Everything that left your accounts arrived."}
+          {transferHeadline(summary.needsReview, summary.pending)}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
           Moving money between your own accounts isn&apos;t a gain or a loss.
@@ -153,7 +150,7 @@ export default async function TransfersPage({
         </div>
       </form>
 
-      <FundingCard groups={funding} />
+      <FundingCard groups={funding} clearAccountHref={clearAccountHref} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
         <SummaryCard
@@ -320,7 +317,13 @@ function SummaryCard({
   );
 }
 
-function FundingCard({ groups }: { groups: InvestmentFundingSummary[] }) {
+function FundingCard({
+  groups,
+  clearAccountHref,
+}: {
+  groups: InvestmentFundingSummary[];
+  clearAccountHref: string;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -334,19 +337,21 @@ function FundingCard({ groups }: { groups: InvestmentFundingSummary[] }) {
           <ul className="divide-y">
             {groups.map((group) => {
               const { inTransit, needsReview } = fundingDifferenceParts(group);
-              const status = group.difference === 0
-                ? "All arrived"
-                : Math.abs(needsReview) < 0.005
-                  ? `${fmtCurrency(Math.abs(inTransit))} in transit`
-                  : `${fmtCurrency(Math.abs(needsReview))} doesn't match — review${
-                      Math.abs(inTransit) >= 0.005 ? ` · ${fmtCurrency(Math.abs(inTransit))} in transit` : ""
-                    }`;
+              const hasReview = needsReview >= 0.005;
+              const hasInTransit = inTransit >= 0.005;
+              const status = hasReview
+                ? `${fmtCurrency(needsReview)} doesn't match — review${
+                    hasInTransit ? ` · ${fmtCurrency(inTransit)} in transit` : ""
+                  }`
+                : hasInTransit
+                  ? `${fmtCurrency(inTransit)} in transit`
+                  : "All arrived";
               const statusClass =
-                group.difference === 0
-                  ? "text-emerald-700 dark:text-emerald-400"
-                  : Math.abs(needsReview) < 0.005
+                hasReview
+                  ? "text-red-700 dark:text-red-400"
+                  : hasInTransit
                     ? "text-amber-700 dark:text-amber-400"
-                    : "text-red-700 dark:text-red-400";
+                    : "text-emerald-700 dark:text-emerald-400";
               const unpairedCount = group.missingArrival.length + group.missingSource.length;
 
               return (
@@ -379,6 +384,17 @@ function FundingCard({ groups }: { groups: InvestmentFundingSummary[] }) {
                             </span>
                           </span>
                         ))}
+                    </p>
+                  )}
+                  {group.unassignedBankOutflows.count > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {group.unassignedBankOutflows.count} bank{" "}
+                      {group.unassignedBankOutflows.count === 1 ? "transfer" : "transfers"} to{" "}
+                      {group.institutionName} ({fmtCurrency(group.unassignedBankOutflows.total)})
+                      {" "}can&apos;t be tied to one account.{" "}
+                      <Link href={clearAccountHref} className="underline hover:text-foreground">
+                        Clear the filter to see them.
+                      </Link>
                     </p>
                   )}
                   {(group.withdrawnToBanks > 0 || group.arrivedInBanks > 0) && (
