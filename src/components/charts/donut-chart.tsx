@@ -76,6 +76,7 @@ export function DonutChart({
             ))}
           </Pie>
           <Tooltip
+            wrapperStyle={{ zIndex: 20 }}
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const slice = payload[0].payload as Slice | undefined;
