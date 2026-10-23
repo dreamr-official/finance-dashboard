@@ -55,6 +55,27 @@ describe("toSlices", () => {
     expect(toSlices([])).toEqual([]);
     expect(toSlices([{ key: "zero", label: "Zero", value: 0 }])).toEqual([]);
   });
+
+  it("passes through only positive finite sources in descending order", () => {
+    expect(
+      toSlices([
+        {
+          key: "one",
+          label: "One",
+          value: 1,
+          sources: [
+            { label: "small", value: 2 },
+            { label: "invalid", value: Number.NaN },
+            { label: "large", value: 5 },
+            { label: "zero", value: 0 },
+          ],
+        },
+      ])[0].sources,
+    ).toEqual([
+      { label: "large", value: 5 },
+      { label: "small", value: 2 },
+    ]);
+  });
 });
 
 describe("capSlices", () => {
@@ -73,7 +94,16 @@ describe("capSlices", () => {
   it("merges the tail into Other", () => {
     expect(capSlices(slices)).toEqual([
       ...slices.slice(0, 5),
-      { key: "__other", label: "Other", value: 130, pct: 26 },
+      {
+        key: "__other",
+        label: "Other",
+        value: 130,
+        pct: 26,
+        sources: [
+          { label: "Slice 6", value: 70 },
+          { label: "Slice 5", value: 60 },
+        ],
+      },
     ]);
   });
 });
@@ -113,15 +143,52 @@ describe("holding aggregations", () => {
     expect(group).not.toHaveProperty("costBasis");
   });
 
+  it("groups symbol sources by account and omits them when no account names are provided", () => {
+    const holdings = [
+      holding({ id: "one", accountId: "fidelity", value: 100 }),
+      holding({ id: "two", accountId: "fidelity", value: 50 }),
+      holding({ id: "three", accountId: "tellus", value: 125 }),
+    ];
+    const [withSources] = groupHoldingsBySymbol(
+      holdings,
+      new Map([
+        ["fidelity", "Fidelity IRA"],
+        ["tellus", "Tellus"],
+      ]),
+    );
+    expect(withSources.sources).toEqual([
+      { label: "Fidelity IRA", value: 150 },
+      { label: "Tellus", value: 125 },
+    ]);
+    expect(groupHoldingsBySymbol(holdings)[0]).not.toHaveProperty("sources");
+  });
+
   it("labels asset types and computes percentages for holdings", () => {
     expect(
       groupHoldingsByAssetType([
-        holding({ value: 300, assetType: "etf" }),
-        holding({ id: "two", value: 100, assetType: "stock" }),
+        holding({ value: 200, symbol: "VOO", assetType: "etf" }),
+        holding({ id: "two", value: 100, symbol: " voo ", assetType: "etf" }),
+        holding({ id: "three", value: 100, symbol: "QQQ", assetType: "etf" }),
+        holding({ id: "four", value: 100, symbol: "MSFT", assetType: "stock" }),
       ]),
     ).toEqual([
-      { key: "etf", label: "ETFs", value: 300, pct: 75 },
-      { key: "stock", label: "Stocks", value: 100, pct: 25 },
+      {
+        key: "etf",
+        label: "ETFs",
+        value: 400,
+        pct: 80,
+        sources: [
+          { label: "VOO", value: 300 },
+          { label: "QQQ", value: 100 },
+        ],
+      },
+      {
+        key: "stock",
+        label: "Stocks",
+        value: 100,
+        pct: 20,
+        sources: [{ label: "MSFT", value: 100 }],
+      },
     ]);
     expect(
       holdingsWithShare([
@@ -137,10 +204,21 @@ describe("holding aggregations", () => {
 });
 
 describe("assetClassSlices", () => {
-  it("excludes liabilities and maps unknown asset classes to Other assets", () => {
+  it("includes sorted account sources, excludes liabilities, and maps unknown classes", () => {
     expect(
       assetClassSlices([
-        account({ id: "cash", assetClass: "cash", currentBalance: 100 }),
+        account({
+          id: "cash",
+          name: "Primary Checking",
+          assetClass: "cash",
+          currentBalance: 150,
+        }),
+        account({
+          id: "cash-2",
+          name: "Tellus",
+          assetClass: "cash",
+          currentBalance: 100,
+        }),
         account({ id: "investment", assetClass: "investment", currentBalance: 200 }),
         account({ id: "retirement", assetClass: "retirement", currentBalance: 300 }),
         account({ id: "other", assetClass: "unexpected" as Account["assetClass"], currentBalance: 50 }),
@@ -148,10 +226,37 @@ describe("assetClassSlices", () => {
         account({ id: "loan", type: "loan", assetClass: "other", currentBalance: -30 }),
       ]),
     ).toEqual([
-      { key: "retirement", label: "Retirement", value: 300, pct: (300 / 650) * 100 },
-      { key: "investment", label: "Investments", value: 200, pct: (200 / 650) * 100 },
-      { key: "cash", label: "Cash", value: 100, pct: (100 / 650) * 100 },
-      { key: "other", label: "Other assets", value: 50, pct: (50 / 650) * 100 },
+      {
+        key: "retirement",
+        label: "Retirement",
+        value: 300,
+        pct: (300 / 800) * 100,
+        sources: [{ label: "Test account", value: 300 }],
+      },
+      {
+        key: "cash",
+        label: "Cash",
+        value: 250,
+        pct: (250 / 800) * 100,
+        sources: [
+          { label: "Primary Checking", value: 150 },
+          { label: "Tellus", value: 100 },
+        ],
+      },
+      {
+        key: "investment",
+        label: "Investments",
+        value: 200,
+        pct: (200 / 800) * 100,
+        sources: [{ label: "Test account", value: 200 }],
+      },
+      {
+        key: "other",
+        label: "Other assets",
+        value: 50,
+        pct: (50 / 800) * 100,
+        sources: [{ label: "Test account", value: 50 }],
+      },
     ]);
   });
 });

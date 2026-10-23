@@ -76,15 +76,40 @@ export function DonutChart({
             ))}
           </Pie>
           <Tooltip
-            formatter={(value, _name, item) => [
-              `${fmtCurrency(Number(value))} · ${fmtShare(Number(item.payload.pct))}`,
-              item.payload.label,
-            ]}
-            contentStyle={{
-              borderRadius: 8,
-              border: "1px solid var(--border)",
-              background: "var(--card)",
-              fontSize: 12,
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const slice = payload[0].payload as Slice | undefined;
+              if (!slice) return null;
+              const value = Number(payload[0].value ?? slice.value);
+              const sources = slice.sources ?? [];
+              return (
+                <div className="max-w-[240px] rounded-lg border bg-card px-3 py-2 text-xs shadow-sm">
+                  <div className="flex min-w-0 items-baseline justify-between gap-2">
+                    <span className="min-w-0 truncate font-medium">{slice.label}</span>
+                    <span className="shrink-0 whitespace-nowrap tabular-nums">
+                      {fmtCurrency(value)} · {fmtShare(slice.pct)}
+                    </span>
+                  </div>
+                  {sources.length > 0 && (
+                    <div className="mt-2 space-y-1 border-t pt-2">
+                      {sources.slice(0, 6).map((source, sourceIndex) => (
+                        <div
+                          key={`${source.label}-${sourceIndex}`}
+                          className="flex min-w-0 items-center justify-between gap-2 text-muted-foreground"
+                        >
+                          <span className="min-w-0 truncate">{source.label}</span>
+                          <span className="shrink-0 tabular-nums">
+                            {fmtCurrency(source.value, { decimals: 0 })}
+                          </span>
+                        </div>
+                      ))}
+                      {sources.length > 6 && (
+                        <div className="text-muted-foreground">+{sources.length - 6} more</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
             }}
           />
         </PieChart>
