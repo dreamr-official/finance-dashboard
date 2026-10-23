@@ -25,6 +25,14 @@ function GrantInvestmentAccessButton({ connectionId }: { connectionId: string })
     setBusy(true);
     setMessage(null);
     try {
+      const repaired = await fetch(
+        `/api/integrations/plaid/${connectionId}/repaired`,
+        { method: "POST" },
+      );
+      const repairedResult = await repaired.json();
+      if (!repaired.ok) {
+        throw new Error(repairedResult.error ?? "Could not restore the connection.");
+      }
       const response = await fetch("/api/sync", { method: "POST" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Sync failed.");

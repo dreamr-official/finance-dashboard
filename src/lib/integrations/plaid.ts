@@ -87,6 +87,7 @@ export const plaidProvider: FinanceProvider = {
       client_name: "Personal Finance Dashboard",
       products: [Products.Transactions],
       optional_products: [Products.Investments],
+      transactions: { days_requested: 730 },
       country_codes: [CountryCode.Us],
       language: "en",
     });
@@ -112,21 +113,28 @@ export const plaidProvider: FinanceProvider = {
   async sync(accessToken, cursor, investmentStartDate): Promise<SyncResult> {
     if (!this.configured) throw new Error("Plaid is not configured");
     const client = plaidClient();
-    const accountResponse = await client.accountsGet({ access_token: accessToken });
-    const accounts = accountResponse.data.accounts.map((a) => {
-      const type = plaidAccountType(a.type, a.subtype ?? undefined);
-      const current = a.balances.current ?? 0;
-      const balance =
-        type === "credit_card" || type === "loan" ? -Math.abs(current) : current;
-      return {
-        providerAccountId: a.account_id,
-        name: a.official_name ?? a.name,
-        type,
-        mask: a.mask ?? undefined,
-        balance,
-        currency: a.balances.iso_currency_code ?? "USD",
-      };
-    });
+    let accounts: SyncResult["accounts"] = [];
+    try {
+      const accountResponse = await client.accountsGet({ access_token: accessToken });
+      accounts = accountResponse.data.accounts.map((a) => {
+        const type = plaidAccountType(a.type, a.subtype ?? undefined);
+        const current = a.balances.current ?? 0;
+        const balance =
+          type === "credit_card" || type === "loan" ? -current : current;
+        return {
+          providerAccountId: a.account_id,
+          name: a.official_name ?? a.name,
+          type,
+          mask: a.mask ?? undefined,
+          balance,
+          currency: a.balances.iso_currency_code ?? "USD",
+        };
+      });
+    } catch (error) {
+      const code = (error as { response?: { data?: { error_code?: string } } })
+        .response?.data?.error_code;
+      if (code !== "PRODUCTS_NOT_SUPPORTED" && code !== "NO_ACCOUNTS") throw error;
+    }
 
     const syncTransactions = async (startCursor?: string) => {
       const transactions: SyncResult["transactions"] = [];
@@ -148,28 +156,21 @@ export const plaidProvider: FinanceProvider = {
     };
 
     let synced;
-    try {
-      synced = await syncTransactions(cursor);
-    } catch (error) {
-      const plaidError = error as { response?: { data?: { error_code?: string } } };
-      const code = plaidError.response?.data?.error_code;
-      if (code === "PRODUCTS_NOT_SUPPORTED" || code === "NO_ACCOUNTS") {
-        synced = { transactions: [], removedTxnIds: [], cursor };
-      } else if (code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") {
-        try {
-          synced = await syncTransactions(cursor);
-        } catch (retryError) {
-          const retryCode = (
-            retryError as { response?: { data?: { error_code?: string } } }
-          ).response?.data?.error_code;
-          if (retryCode === "PRODUCTS_NOT_SUPPORTED" || retryCode === "NO_ACCOUNTS") {
-            synced = { transactions: [], removedTxnIds: [], cursor };
-          } else {
-            throw retryError;
-          }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        synced = await syncTransactions(cursor);
+        break;
+      } catch (error) {
+        const code = (error as { response?: { data?: { error_code?: string } } })
+          .response?.data?.error_code;
+        if (code === "PRODUCTS_NOT_SUPPORTED" || code === "NO_ACCOUNTS") {
+          synced = { transactions: [], removedTxnIds: [], cursor };
+          break;
         }
-      } else {
-        throw error;
+        if (code !== "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" || attempt >= 2) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 250 : 1000));
       }
     }
 
