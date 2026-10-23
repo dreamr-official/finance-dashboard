@@ -199,7 +199,9 @@ export default async function TransfersPage({
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Nothing to review — every transfer in this range has a matching other side.
+              {pending.length > 0
+                ? "Nothing to review. Transfers still in transit are listed below."
+                : "Nothing to review — every transfer in this range has a matching other side."}
             </p>
           )}
         </CardContent>
