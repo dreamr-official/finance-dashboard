@@ -55,8 +55,8 @@ export default async function OverviewPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">Total net worth</p>
+      <div className="rounded-2xl border bg-gradient-to-br from-primary/15 via-primary/5 to-card p-5 sm:p-6">
+        <p className="text-sm font-medium text-primary">Total net worth</p>
         <h1 className="text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
           {fmtCurrency(summary.netWorth, { decimals: 0 })}
         </h1>

@@ -41,8 +41,8 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
             pathname.startsWith(href)
-              ? "bg-accent text-foreground"
-              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              ? "bg-sidebar-accent text-sidebar-accent-foreground [&>svg]:text-primary"
+              : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
           )}
         >
           <Icon className="h-4 w-4" />
@@ -92,14 +92,25 @@ function Footer({ demoMode, role }: { demoMode: boolean; role: string }) {
   );
 }
 
+function Brand() {
+  return (
+    <span className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+      <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <Wallet className="size-4" />
+      </span>
+      Finance
+    </span>
+  );
+}
+
 export function AppSidebar({ demoMode, role }: { demoMode: boolean; role: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex">
-        <div className="flex h-14 items-center px-6 text-lg font-semibold tracking-tight">
-          Finance
+      <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar md:flex">
+        <div className="flex h-14 items-center px-6">
+          <Brand />
         </div>
         <NavLinks />
         <Footer demoMode={demoMode} role={role} />
@@ -114,13 +125,15 @@ export function AppSidebar({ demoMode, role }: { demoMode: boolean; role: string
               </Button>
             }
           />
-          <SheetContent side="left" className="flex w-64 min-w-0 flex-col bg-card p-0 pt-4">
-            <div className="px-6 pb-2 text-lg font-semibold">Finance</div>
+          <SheetContent side="left" className="flex w-64 min-w-0 flex-col bg-sidebar p-0 pt-4">
+            <div className="px-6 pb-2">
+              <Brand />
+            </div>
             <NavLinks onNavigate={() => setOpen(false)} />
             <Footer demoMode={demoMode} role={role} />
           </SheetContent>
         </Sheet>
-        <span className="text-lg font-semibold">Finance</span>
+        <Brand />
       </div>
     </>
   );
