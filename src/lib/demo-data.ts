@@ -284,6 +284,13 @@ const recurringTransactions: Transaction[] = (() => {
         500,
         "deposit",
       ),
+      txn(
+        "a-bofa-chk",
+        daysAgoForDate(date.toISOString().slice(0, 10)) + 1,
+        "Online Banking transfer to Fidelity",
+        -500,
+        "transfer_out",
+      ),
     );
   }
   return rows;

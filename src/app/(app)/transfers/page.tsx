@@ -25,7 +25,11 @@ const KIND_LABEL: Record<TransferKind, string> = {
 };
 
 function dateParam(value: string | string[] | undefined, fallback: string) {
-  return typeof value === "string" && ISO_DATE.test(value) ? value : fallback;
+  if (typeof value !== "string" || !ISO_DATE.test(value)) return fallback;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+    ? value
+    : fallback;
 }
 
 function isoDaysAgo(today: string, days: number) {
@@ -78,6 +82,7 @@ export default async function TransfersPage({
       </div>
 
       <form
+        key={`${from}|${to}|${accountId}`}
         method="get"
         className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
       >
