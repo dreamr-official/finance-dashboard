@@ -51,7 +51,7 @@ export function ContributionsChart({
           <Line
             type="monotone"
             dataKey="value"
-            stroke="var(--color-chart-2, #6366f1)"
+            stroke="var(--color-chart-1, #10b981)"
             strokeWidth={2}
             dot={false}
           />
