@@ -28,7 +28,10 @@ export default async function InvestmentsPage() {
   );
   const investAccountIds = new Set(investAccounts.map((a) => a.id));
   const investHoldings = holdings.filter((holding) => investAccountIds.has(holding.accountId));
-  const symbolGroups = groupHoldingsBySymbol(investHoldings);
+  const symbolGroups = groupHoldingsBySymbol(
+    investHoldings,
+    new Map(accounts.map((account) => [account.id, account.name] as const)),
+  );
   const assetTypeSlices = groupHoldingsByAssetType(investHoldings);
   const holdingTotal = symbolGroups.reduce((sum, holding) => sum + holding.value, 0);
   const contributions = transactions.filter(

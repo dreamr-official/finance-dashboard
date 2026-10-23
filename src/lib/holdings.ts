@@ -17,6 +17,18 @@ export interface Slice {
   label: string;
   value: number;
   pct: number;
+  sources?: SliceSource[];
+}
+
+export interface SliceSource {
+  label: string;
+  value: number;
+}
+
+function sortedPositiveSources(sources: SliceSource[]): SliceSource[] {
+  return sources
+    .filter((source) => Number.isFinite(source.value) && source.value > 0)
+    .sort((a, b) => b.value - a.value);
 }
 
 export const ASSET_TYPE_LABEL: Record<Holding["assetType"], string> = {
@@ -29,7 +41,9 @@ export const ASSET_TYPE_LABEL: Record<Holding["assetType"], string> = {
   other: "Other",
 };
 
-export function toSlices(items: { key: string; label: string; value: number }[]): Slice[] {
+export function toSlices(
+  items: { key: string; label: string; value: number; sources?: SliceSource[] }[],
+): Slice[] {
   const kept = items
     .filter((item) => Number.isFinite(item.value) && item.value > 0)
     .sort((a, b) => b.value - a.value);
@@ -37,6 +51,9 @@ export function toSlices(items: { key: string; label: string; value: number }[])
   if (total === 0) return [];
   return kept.map((item) => ({
     ...item,
+    ...(item.sources === undefined
+      ? {}
+      : { sources: sortedPositiveSources(item.sources) }),
     pct: (item.value / total) * 100,
   }));
 }
@@ -47,7 +64,18 @@ export function capSlices(slices: Slice[], max = 6): Slice[] {
   const rest = slices.slice(max - 1);
   const value = rest.reduce((sum, slice) => sum + slice.value, 0);
   const pct = rest.reduce((sum, slice) => sum + slice.pct, 0);
-  return [...kept, { key: "__other", label: "Other", value, pct }];
+  return [
+    ...kept,
+    {
+      key: "__other",
+      label: "Other",
+      value,
+      pct,
+      sources: sortedPositiveSources(
+        rest.map((slice) => ({ label: slice.label, value: slice.value })),
+      ),
+    },
+  ];
 }
 
 export interface SymbolGroup extends Slice {
@@ -59,8 +87,14 @@ export interface SymbolGroup extends Slice {
   assetType: Holding["assetType"];
 }
 
-export function groupHoldingsBySymbol(holdings: Holding[]): SymbolGroup[] {
+export function groupHoldingsBySymbol(
+  holdings: Holding[],
+  accountNames?: Map<string, string>,
+): SymbolGroup[] {
   const groups = new Map<string, SymbolGroup>();
+  const sourceValuesBySymbol = accountNames
+    ? new Map<string, Map<string, number>>()
+    : undefined;
   for (const holding of holdings) {
     const symbol = holding.symbol.trim().toUpperCase();
     const existing = groups.get(symbol);
@@ -89,26 +123,57 @@ export function groupHoldingsBySymbol(holdings: Holding[]): SymbolGroup[] {
         assetType: holding.assetType,
       });
     }
+    if (sourceValuesBySymbol) {
+      const sourceValues = sourceValuesBySymbol.get(symbol) ?? new Map<string, number>();
+      sourceValues.set(
+        holding.accountId,
+        (sourceValues.get(holding.accountId) ?? 0) + holding.value,
+      );
+      sourceValuesBySymbol.set(symbol, sourceValues);
+    }
   }
   const collected = [...groups.values()];
   const slices = toSlices(collected);
   const bySymbol = new Map(collected.map((group) => [group.key, group]));
-  return slices.map((slice) => ({
-    ...bySymbol.get(slice.key)!,
-    pct: slice.pct,
-  }));
+  return slices.map((slice) => {
+    const group = bySymbol.get(slice.key)!;
+    const sources = sourceValuesBySymbol?.get(group.symbol);
+    return {
+      ...group,
+      ...(accountNames
+        ? {
+            sources: sortedPositiveSources(
+              [...(sources ?? [])].map(([accountId, value]) => ({
+                label: accountNames.get(accountId) ?? "Unknown account",
+                value,
+              })),
+            ),
+          }
+        : {}),
+      pct: slice.pct,
+    };
+  });
 }
 
 export function groupHoldingsByAssetType(holdings: Holding[]): Slice[] {
   const values = new Map<Holding["assetType"], number>();
+  const sourceValues = new Map<Holding["assetType"], Map<string, number>>();
   for (const holding of holdings) {
     values.set(holding.assetType, (values.get(holding.assetType) ?? 0) + holding.value);
+    const symbol = holding.symbol.trim().toUpperCase();
+    const symbols = sourceValues.get(holding.assetType) ?? new Map<string, number>();
+    symbols.set(symbol, (symbols.get(symbol) ?? 0) + holding.value);
+    sourceValues.set(holding.assetType, symbols);
   }
   return toSlices(
     [...values].map(([assetType, value]) => ({
       key: assetType,
       label: ASSET_TYPE_LABEL[assetType],
       value,
+      sources: [...(sourceValues.get(assetType) ?? [])].map(([label, sourceValue]) => ({
+        label,
+        value: sourceValue,
+      })),
     })),
   );
 }
@@ -130,14 +195,29 @@ export function assetClassSlices(accounts: Account[]): Slice[] {
     other: "Other assets",
   } as const;
   const values = new Map<keyof typeof labels, number>();
+  const sources = new Map<keyof typeof labels, SliceSource[]>();
   for (const account of accounts) {
     if (isLiability(account)) continue;
     const key = Object.prototype.hasOwnProperty.call(labels, account.assetClass)
       ? (account.assetClass as keyof typeof labels)
       : "other";
     values.set(key, (values.get(key) ?? 0) + account.currentBalance);
+    if (
+      account.assetClass !== "liability" &&
+      Number.isFinite(account.currentBalance) &&
+      account.currentBalance > 0
+    ) {
+      const classSources = sources.get(key) ?? [];
+      classSources.push({ label: account.name, value: account.currentBalance });
+      sources.set(key, classSources);
+    }
   }
   return toSlices(
-    [...values].map(([key, value]) => ({ key, label: labels[key], value })),
+    [...values].map(([key, value]) => ({
+      key,
+      label: labels[key],
+      value,
+      sources: sources.get(key) ?? [],
+    })),
   );
 }

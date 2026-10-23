@@ -16,7 +16,7 @@ export function fmtCompact(n: number) {
     currency: "USD",
     notation: "compact",
     maximumFractionDigits: 1,
-  }).format(n);
+  }).format(n || 0);
 }
 
 export function fmtPct(n: number | null, decimals = 1) {
