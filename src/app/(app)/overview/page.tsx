@@ -1,5 +1,6 @@
 import { getDataset } from "@/lib/data/provider";
 import {
+  accountChanges,
   applyNetWorthChange,
   computeNetWorth,
   isLiability,
@@ -8,6 +9,7 @@ import {
 import { assetClassSlices } from "@/lib/holdings";
 import { fmtCompact, fmtCurrency, fmtDate, fmtShare } from "@/lib/format";
 import { NetWorthChart } from "@/components/net-worth-chart";
+import { AccountChanges } from "@/components/account-changes";
 import { StatCard } from "@/components/stat-card";
 import { Delta } from "@/components/delta";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,11 +26,11 @@ import {
 export default async function OverviewPage() {
   const { accounts, institutions, snapshots, subscriptions, transactions } = await getDataset();
   const today = new Date();
+  const todayDate = today.toISOString().slice(0, 10);
   const upcomingSubscriptions = getUpcomingSubscriptions(subscriptions, today, 14);
   const cutoff = new Date(today);
   cutoff.setUTCDate(cutoff.getUTCDate() - 60);
   const cutoffDate = cutoff.toISOString().slice(0, 10);
-  const todayDate = today.toISOString().slice(0, 10);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const recentIncome = transactions
     .filter(
@@ -40,12 +42,10 @@ export default async function OverviewPage() {
     )
     .sort((a, b) => b.date.localeCompare(a.date));
   const recentIncomeTotal = recentIncome.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const summary = applyNetWorthChange(
-    computeNetWorth(accounts),
-    netWorthSeries(accounts, snapshots),
-  );
-  const series = netWorthSeries(accounts, snapshots);
+  const series = netWorthSeries(accounts, snapshots, todayDate);
+  const summary = applyNetWorthChange(computeNetWorth(accounts), series);
   const instById = Object.fromEntries(institutions.map((i) => [i.id, i]));
+  const liabilityAccounts = accounts.filter((account) => account.assetClass === "liability");
   const assetSlices = assetClassSlices(accounts);
   const groups = [
     { key: "cash", label: "Cash" },
@@ -75,7 +75,13 @@ export default async function OverviewPage() {
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard title="Assets" value={fmtCompact(summary.assets)} />
-        <StatCard title="Liabilities" value={fmtCompact(summary.liabilities)} />
+        <Link href="#liabilities" className="block">
+          <StatCard
+            title="Liabilities"
+            value={fmtCompact(summary.liabilities)}
+            sub="Credit cards & loans"
+          />
+        </Link>
         <StatCard title="Cash" value={fmtCompact(summary.cash)} />
         <StatCard title="Invested (incl. retirement)" value={fmtCompact(summary.investments)} />
       </div>
@@ -136,12 +142,40 @@ export default async function OverviewPage() {
               })}
             </div>
           </div>
-          <div className="flex items-center justify-between border-t pt-3 text-sm">
+          <div id="liabilities" className="flex items-center justify-between border-t pt-3 text-sm">
             <span className="text-muted-foreground">Liabilities</span>
             <span className="font-medium tabular-nums text-red-600 dark:text-red-400">
               {fmtCurrency(-Math.abs(summary.liabilities), { decimals: 0 })}
             </span>
           </div>
+          {liabilityAccounts.length ? (
+            <ul className="divide-y">
+              {liabilityAccounts.map((account) => (
+                <li key={account.id}>
+                  <Link
+                    href={`/accounts/${account.id}`}
+                    className="flex items-center justify-between gap-3 py-3 transition-colors hover:bg-accent/50"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{account.name}</span>
+                      {instById[account.institutionId]?.name && (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {instById[account.institutionId]?.name}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-sm font-medium tabular-nums text-red-600 dark:text-red-400">
+                      {fmtCurrency(account.currentBalance, { decimals: 0 })}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Nothing owed. Credit cards and loans appear here once linked or added.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -215,6 +249,18 @@ export default async function OverviewPage() {
           </p>
         </CardContent>
       </Card>
+
+      <AccountChanges
+        changes={{
+          day: accountChanges(accounts, snapshots, todayDate, 1),
+          week: accountChanges(accounts, snapshots, todayDate, 7),
+          month: accountChanges(accounts, snapshots, todayDate, 30),
+        }}
+        institutionNames={Object.fromEntries(institutions.map((institution) => [
+          institution.id,
+          institution.name,
+        ]))}
+      />
 
       <Card>
         <CardHeader>

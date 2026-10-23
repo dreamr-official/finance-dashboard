@@ -69,6 +69,10 @@ export default async function AccountPage({
   const hist = snapshots
     .filter((s) => s.accountId === id)
     .sort((a, b) => a.date.localeCompare(b.date));
+  const todayDate = new Date().toISOString().slice(0, 10);
+  if (hist.length > 0 && hist[hist.length - 1].date < todayDate) {
+    hist.push({ accountId: id, date: todayDate, balance: account.currentBalance });
+  }
   const allTxns = transactions
     .filter((t) => t.accountId === id)
     .sort(compareNewestFirst);

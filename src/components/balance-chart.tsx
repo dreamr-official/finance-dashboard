@@ -9,13 +9,21 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
+import { fmtChartTick, fmtCompact, fmtCurrency, fmtDate } from "@/lib/format";
 
 export function BalanceChart({
   data,
 }: {
   data: { date: string; balance: number }[];
 }) {
+  const firstDate = data[0]?.date;
+  const lastDate = data[data.length - 1]?.date;
+  const spanDays =
+    firstDate && lastDate
+      ? (Date.parse(`${lastDate}T00:00:00.000Z`) -
+          Date.parse(`${firstDate}T00:00:00.000Z`)) /
+        86400000
+      : 0;
   return (
     <div className="h-48 w-full">
       <ResponsiveContainer>
@@ -29,9 +37,7 @@ export function BalanceChart({
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
           <XAxis
             dataKey="date"
-            tickFormatter={(v) =>
-              new Date(v).toLocaleDateString("en-US", { month: "short", year: "2-digit" })
-            }
+            tickFormatter={(value) => fmtChartTick(String(value), spanDays)}
             tick={{ fontSize: 11 }}
             minTickGap={48}
             axisLine={false}
@@ -60,6 +66,7 @@ export function BalanceChart({
             stroke="var(--color-chart-1, #10b981)"
             strokeWidth={2}
             fill="url(#bal)"
+            isAnimationActive={false}
           />
         </AreaChart>
       </ResponsiveContainer>

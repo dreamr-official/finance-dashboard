@@ -4,6 +4,7 @@ import { classifyType, normalizeTransactionAmount } from "./transactions";
 import { buildTransferLegs } from "./transfers";
 import { convertPlaidTransaction, plaidAccountType } from "./integrations/plaid";
 import {
+  accountChanges,
   applyNetWorthChange,
   computeNetWorth,
   netWorthSeries,
@@ -91,6 +92,32 @@ describe("signed net worth", () => {
     ]);
   });
 
+  it("appends today's current balance when snapshots end earlier", () => {
+    expect(
+      netWorthSeries(
+        [account("cash", 120)],
+        [{ accountId: "cash", date: "2026-10-20", balance: 100 }],
+        "2026-10-23",
+      ),
+    ).toEqual([
+      { date: "2026-10-20", value: 100 },
+      { date: "2026-10-23", value: 120 },
+    ]);
+  });
+
+  it("adds today when no snapshots exist and does not duplicate today's snapshot", () => {
+    expect(netWorthSeries([account("cash", 120)], [], "2026-10-23")).toEqual([
+      { date: "2026-10-23", value: 120 },
+    ]);
+    expect(
+      netWorthSeries(
+        [account("cash", 120)],
+        [{ accountId: "cash", date: "2026-10-23", balance: 100 }],
+        "2026-10-23",
+      ),
+    ).toEqual([{ date: "2026-10-23", value: 100 }]);
+  });
+
   it("does not inflate deltas when a new investment has only today's snapshot", () => {
     const accounts = [
       account("checking", 1250),
@@ -116,6 +143,101 @@ describe("signed net worth", () => {
     ).toEqual({ day: 10, week: 10, month: null, year: null });
     expect(applyNetWorthChange(summary, [{ date: "2026-10-23", value: 100 }]).change)
       .toEqual({ day: null, week: null, month: null, year: null });
+  });
+
+  it("reports up, down, unchanged, and new accounts in change order", () => {
+    const accounts = [
+      account("up", 120),
+      account("down", 80),
+      account("same", 10),
+      account("new", 50),
+    ];
+    const changes = accountChanges(
+      accounts,
+      [
+        { accountId: "up", date: "2026-10-22", balance: 100 },
+        { accountId: "down", date: "2026-10-22", balance: 100 },
+        { accountId: "same", date: "2026-10-22", balance: 10 },
+        { accountId: "new", date: "2026-10-23", balance: 40 },
+      ],
+      "2026-10-23",
+      1,
+    );
+
+    expect(changes.map(({ account: { id }, change, isNew }) => [id, change, isNew])).toEqual([
+      ["down", -20, false],
+      ["up", 20, false],
+      ["same", 0, false],
+      ["new", null, true],
+    ]);
+    expect(changes.find((entry) => entry.account.id === "up")?.pct).toBe(0.2);
+  });
+
+  it("keeps liability changes signed and chooses the latest snapshot on or before cutoff", () => {
+    const liability = account("card", -700, "liability", "credit_card");
+    const [change] = accountChanges(
+      [liability],
+      [
+        { accountId: "card", date: "2026-10-15", balance: -400 },
+        { accountId: "card", date: "2026-10-20", balance: -500 },
+        { accountId: "card", date: "2026-10-22", balance: -550 },
+        { accountId: "card", date: "2026-10-23", balance: -600 },
+      ],
+      "2026-10-23",
+      1,
+    );
+
+    expect(change).toMatchObject({
+      start: -550,
+      end: -700,
+      change: -150,
+      pct: -150 / 550,
+      isNew: false,
+    });
+  });
+
+  it("uses null percent change when the start balance is zero", () => {
+    const [change] = accountChanges(
+      [account("zero-start", 100)],
+      [{ accountId: "zero-start", date: "2026-10-22", balance: 0 }],
+      "2026-10-23",
+      1,
+    );
+
+    expect(change).toMatchObject({ start: 0, change: 100, pct: null, isNew: false });
+  });
+
+  it("reconciles account changes with header deltas when all accounts have history", () => {
+    const accounts = [
+      account("cash", 1200),
+      account("investment", 5200, "investment", "brokerage"),
+      account("liability", -700, "liability", "credit_card"),
+    ];
+    const snapshots = [
+      { accountId: "cash", date: "2026-09-23", balance: 1000 },
+      { accountId: "cash", date: "2026-10-16", balance: 1100 },
+      { accountId: "cash", date: "2026-10-22", balance: 1190 },
+      { accountId: "investment", date: "2026-09-23", balance: 4800 },
+      { accountId: "investment", date: "2026-10-16", balance: 5000 },
+      { accountId: "investment", date: "2026-10-22", balance: 5100 },
+      { accountId: "liability", date: "2026-09-23", balance: -600 },
+      { accountId: "liability", date: "2026-10-16", balance: -650 },
+      { accountId: "liability", date: "2026-10-22", balance: -690 },
+    ];
+    const series = netWorthSeries(accounts, snapshots, "2026-10-23");
+    const summary = applyNetWorthChange(computeNetWorth(accounts), series);
+
+    for (const [period, days] of [
+      ["day", 1],
+      ["week", 7],
+      ["month", 30],
+    ] as const) {
+      const total = accountChanges(accounts, snapshots, "2026-10-23", days).reduce(
+        (sum, entry) => sum + (entry.change ?? 0),
+        0,
+      );
+      expect(total).toBe(summary.change[period]);
+    }
   });
 });
 

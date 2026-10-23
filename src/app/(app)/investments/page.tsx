@@ -1,5 +1,7 @@
 import { getDataset } from "@/lib/data/provider";
 import { rothContributions, DEFAULT_ROTH_LIMITS } from "@/lib/finance";
+import { classifyInvestmentFlows } from "@/lib/contributions";
+import type { ContributionEntry } from "@/lib/contributions";
 import {
   capSlices,
   groupHoldingsByAssetType,
@@ -18,52 +20,101 @@ import { ContributionsChart } from "@/components/contributions-chart";
 import { DonutChart } from "@/components/charts/donut-chart";
 import Link from "next/link";
 
+function contributionLabel(flow: ContributionEntry) {
+  switch (flow.source) {
+    case "deposit":
+      return "Deposit";
+    case "withdrawal":
+      return "Withdrawal";
+    case "transfer_from_cash":
+      return `From ${flow.fromAccount?.name ?? "cash account"}`;
+    case "transfer_unmatched":
+      return flow.transaction.type === "transfer_in" ? "Transfer in" : "Transfer out";
+    case "transfer_to_cash":
+      return `To ${flow.toAccount?.name ?? "cash account"}`;
+    case "transfer_out_unmatched":
+      return "Transfer out";
+    case "transfer_from_investment":
+      return `From ${flow.fromAccount?.name ?? "investment account"}`;
+    case "other":
+      return "Other";
+  }
+  return "Transfer";
+}
 
 export default async function InvestmentsPage() {
   const TAX_YEAR = new Date().getUTCFullYear();
-  const { accounts, transactions, holdings } = await getDataset();
+  const { accounts, institutions, transactions, holdings } = await getDataset();
   const rothAccounts = accounts.filter((account) => account.type === "roth_ira");
   const investAccounts = accounts.filter(
     (a) => a.assetClass === "investment" || a.assetClass === "retirement",
   );
   const investAccountIds = new Set(investAccounts.map((a) => a.id));
   const investHoldings = holdings.filter((holding) => investAccountIds.has(holding.accountId));
+  const institutionById = new Map(institutions.map((institution) => [institution.id, institution]));
   const symbolGroups = groupHoldingsBySymbol(
     investHoldings,
     new Map(accounts.map((account) => [account.id, account.name] as const)),
   );
   const assetTypeSlices = groupHoldingsByAssetType(investHoldings);
   const holdingTotal = symbolGroups.reduce((sum, holding) => sum + holding.value, 0);
-  const contributions = transactions.filter(
-    (transaction) => transaction.type === "deposit" && investAccountIds.has(transaction.accountId),
-  );
-  const thisYearContributions = contributions
-    .filter((transaction) => transaction.date.startsWith(String(TAX_YEAR)))
-    .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
-  const allTimeContributions = contributions.reduce(
-    (sum, transaction) => sum + Math.abs(transaction.amount),
-    0,
-  );
+  const flows = classifyInvestmentFlows(accounts, transactions);
+  const thisYearContributions = flows.counted
+    .filter(
+      (flow) =>
+        flow.amount > 0 && flow.transaction.date.startsWith(String(TAX_YEAR)),
+    )
+    .reduce((sum, flow) => sum + flow.amount, 0);
+  const allTimeContributions = flows.counted
+    .filter((flow) => flow.amount > 0)
+    .reduce((sum, flow) => sum + flow.amount, 0);
   const contributionByAccount = investAccounts
-    .map((account) => ({
-      account,
-      amount: contributions
-        .filter((transaction) => transaction.accountId === account.id)
-        .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
-    }))
+    .map((account) => {
+      const counted = flows.counted.filter((flow) => flow.account.id === account.id);
+      const incomingNotCounted = flows.notCounted.filter(
+        (flow) => flow.account.id === account.id && flow.amount > 0,
+      );
+      const accountTransactions = transactions.filter(
+        (transaction) => transaction.accountId === account.id,
+      );
+      const amount = counted
+        .filter((flow) => flow.amount > 0)
+        .reduce((sum, flow) => sum + flow.amount, 0);
+      let hint: string | null = null;
+      if (amount === 0) {
+        if (incomingNotCounted.length) {
+          const examples = [
+            ...new Set(
+              incomingNotCounted.map((flow) =>
+                flow.source === "other"
+                  ? "type Other"
+                  : flow.fromAccount
+                    ? `transfer from ${flow.fromAccount.name}`
+                    : "transfer in",
+              ),
+            ),
+          ].slice(0, 2);
+          hint = `${incomingNotCounted.length} incoming not counted (e.g. ${examples.join(", or ")}) — open account to change type`;
+        } else if (
+          accountTransactions.length === 0 &&
+          !account.isManual &&
+          institutionById.get(account.institutionId)?.provider === "plaid"
+        ) {
+          hint = "No activity received yet — Settings → Grant investment access, then Sync now";
+        } else if (account.isManual) {
+          hint = "No deposits logged — Add transaction → Deposit";
+        } else if (accountTransactions.length === 0) {
+          hint = "No activity received yet — Settings → Grant investment access, then Sync now";
+        } else {
+          hint = "No qualifying contributions yet — review account activity.";
+        }
+      }
+      return { account, amount, hint };
+    })
     .sort((a, b) => b.amount - a.amount);
   const contributionsByDate = new Map<string, number>();
-  for (const transaction of transactions) {
-    if (
-      !investAccountIds.has(transaction.accountId) ||
-      (transaction.type !== "deposit" && transaction.type !== "withdrawal")
-    ) {
-      continue;
-    }
-    const amount =
-      transaction.type === "deposit"
-        ? Math.abs(transaction.amount)
-        : -Math.abs(transaction.amount);
+  for (const flow of flows.counted) {
+    const { transaction, amount } = flow;
     contributionsByDate.set(
       transaction.date,
       (contributionsByDate.get(transaction.date) ?? 0) + amount,
@@ -80,27 +131,18 @@ export default async function InvestmentsPage() {
     ], []);
   const maxContribution = contributionByAccount[0]?.amount ?? 0;
   const stats = investAccounts.map((account) => {
-    const accountTransactions = transactions.filter(
-      (transaction) => transaction.accountId === account.id,
-    );
-    const deposits = accountTransactions
-      .filter((transaction) => transaction.type === "deposit")
-      .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
-    const withdrawals = accountTransactions
-      .filter((transaction) => transaction.type === "withdrawal")
-      .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
+    const accountFlows = flows.counted
+      .filter((flow) => flow.account.id === account.id)
+      .sort((a, b) => b.transaction.date.localeCompare(a.transaction.date));
+    const deposits = accountFlows
+      .filter((flow) => flow.amount > 0)
+      .reduce((sum, flow) => sum + flow.amount, 0);
     return {
       account,
       currentValue: account.currentBalance,
       totalDeposits: deposits,
-      netContributions: deposits - withdrawals,
-      contributionLog: accountTransactions
-        .filter(
-          (transaction) =>
-            transaction.type === "deposit" || transaction.type === "withdrawal",
-        )
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 8),
+      netContributions: accountFlows.reduce((sum, flow) => sum + flow.amount, 0),
+      contributionLog: accountFlows.slice(0, 8),
     };
   });
   const roth = rothContributions(accounts, transactions, TAX_YEAR);
@@ -137,13 +179,21 @@ export default async function InvestmentsPage() {
             <CardTitle>Where your contributions went</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {contributionByAccount.map(({ account, amount }) => (
+            {contributionByAccount.map(({ account, amount, hint }) => (
               <div
                 key={account.id}
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
               >
                 <div className="min-w-0">
                   <div className="truncate text-sm">{account.name}</div>
+                  {hint && (
+                    <Link
+                      href={`/accounts/${account.id}`}
+                      className="mt-1 block text-xs text-muted-foreground hover:underline"
+                    >
+                      {hint}
+                    </Link>
+                  )}
                   <div className="mt-1 h-2 rounded-full bg-muted">
                     <div
                       className="h-full rounded-full bg-primary"
@@ -245,7 +295,7 @@ export default async function InvestmentsPage() {
             <ContributionsChart data={contributionHistory} />
           ) : (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No deposits or withdrawals to chart yet.
+              No contribution activity to chart yet.
             </p>
           )}
         </CardContent>
@@ -288,8 +338,8 @@ export default async function InvestmentsPage() {
           ) : (
             roth.deposits === 0 && (
               <p className="mt-2 text-sm text-muted-foreground">
-                No contributions found for {TAX_YEAR}. If a contribution shows as a transfer or
-                other, open the account and change that transaction&apos;s type to Deposit.
+                No contributions found for {TAX_YEAR}. Qualifying transfers from cash or a
+                brokerage count automatically; IRA-to-IRA transfers do not count toward the limit.
               </p>
             )
           )}
@@ -320,7 +370,7 @@ export default async function InvestmentsPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
-                    <div className="text-xs text-muted-foreground">Total deposited</div>
+                    <div className="text-xs text-muted-foreground">Total contributed</div>
                     <div className="tabular-nums font-medium">
                       {fmtCurrency(s.totalDeposits, { decimals: 0 })}
                     </div>
@@ -337,21 +387,21 @@ export default async function InvestmentsPage() {
                     Contribution log
                   </div>
                   {s.contributionLog.length ? (
-                    s.contributionLog.map((transaction) => (
+                    s.contributionLog.map((flow) => (
                       <div
-                        key={transaction.id}
+                        key={flow.transaction.id}
                         className="flex items-center justify-between gap-3 text-sm"
                       >
                         <span className="text-muted-foreground">
-                          {transaction.date} · {transaction.type}
+                          {flow.transaction.date} · {contributionLabel(flow)}
                         </span>
                         <span className="shrink-0 tabular-nums">
-                          {fmtCurrency(transaction.amount, { sign: true })}
+                          {fmtCurrency(flow.amount, { sign: true })}
                         </span>
                       </div>
                     ))
                   ) : (
-                    <p className="text-xs text-muted-foreground">No deposits or withdrawals yet.</p>
+                    <p className="text-xs text-muted-foreground">No contribution activity yet.</p>
                   )}
                 </div>
                 {accountHoldings.length > 0 && (
@@ -385,8 +435,9 @@ export default async function InvestmentsPage() {
         })}
       </div>
       <p className="text-xs text-muted-foreground">
-        Deposits count only money in from outside. Buys, sells, dividends, and
-        transfers between your own accounts never count as contributions.
+        Deposits and transfers from cash count as contributed. Transfers between investment
+        accounts, buys, sells, dividends, and fees do not add new money. Withdrawals and transfers
+        back to cash reduce net contributions.
       </p>
     </div>
   );
