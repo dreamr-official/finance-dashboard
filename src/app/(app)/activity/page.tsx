@@ -1,9 +1,19 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { getDataset } from "@/lib/data/provider";
 import { summarizeActivity } from "@/lib/activity";
 import { fmtCurrency } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import {
+  filterTransactions,
+  groupByMonth,
+  PAGE_STEP,
+  parseLimit,
+  parseTransactionFilters,
+  withParams,
+} from "@/lib/transaction-list";
 
 const TYPE_OPTIONS = [
   "deposit",
@@ -31,28 +41,21 @@ export default async function ActivityPage({
     getDataset(),
     searchParams,
   ]);
-  const accountId = typeof params.account === "string" ? params.account : "";
-  const type = typeof params.type === "string" ? params.type : "";
-  const month = typeof params.month === "string" ? params.month : "";
-  const query = typeof params.q === "string" ? params.q.trim().toLowerCase() : "";
+  const filters = parseTransactionFilters(params);
+  const limit = parseLimit(params.limit);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
-  const filtered = transactions
-    .filter((transaction) => {
-      if (accountId && transaction.accountId !== accountId) return false;
-      if (type && transaction.type !== type) return false;
-      if (month && !transaction.date.startsWith(month)) return false;
-      if (
-        query &&
-        !transaction.name.toLowerCase().includes(query) &&
-        !(transaction.category ?? "").toLowerCase().includes(query)
-      ) {
-        return false;
-      }
-      return true;
-    })
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const filtered = filterTransactions(transactions, filters);
   const summary = summarizeActivity(filtered, accounts);
-  const visible = filtered.slice(0, 500);
+  const visible = filtered.slice(0, limit);
+  const monthGroups = groupByMonth(visible, filtered);
+  const currentParams = {
+    account: filters.accountId,
+    type: filters.type,
+    month: filters.month,
+    from: filters.from,
+    to: filters.to,
+    q: filters.q,
+  };
   const categories = new Map<string, number>();
   for (const transaction of filtered) {
     if (
@@ -80,13 +83,13 @@ export default async function ActivityPage({
 
       <form
         method="get"
-        className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5"
+        className="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
       >
         <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
           Account
           <select
             name="account"
-            defaultValue={accountId}
+            defaultValue={filters.accountId}
             className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
           >
             <option value="">All accounts</option>
@@ -101,7 +104,7 @@ export default async function ActivityPage({
           Type
           <select
             name="type"
-            defaultValue={type}
+            defaultValue={filters.type}
             className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground capitalize md:text-sm"
           >
             <option value="">All types</option>
@@ -117,7 +120,25 @@ export default async function ActivityPage({
           <input
             name="month"
             type="month"
-            defaultValue={month}
+            defaultValue={filters.month}
+            className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          From
+          <input
+            name="from"
+            type="date"
+            defaultValue={filters.from}
+            className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          To
+          <input
+            name="to"
+            type="date"
+            defaultValue={filters.to}
             className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
           />
         </label>
@@ -126,12 +147,12 @@ export default async function ActivityPage({
           <input
             name="q"
             type="search"
-            defaultValue={query}
+            defaultValue={filters.q}
             placeholder="Name or category"
             className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
           />
         </label>
-        <div className="flex items-end gap-3">
+        <div className="flex items-end gap-3 sm:col-span-2 lg:col-span-4">
           <button
             type="submit"
             className="h-9 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"
@@ -178,74 +199,135 @@ export default async function ActivityPage({
         </CardContent>
       </Card>
 
-      {filtered.length > 500 && (
+      <section className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Showing the newest 500 of {filtered.length} matching transactions.
+          Showing {visible.length.toLocaleString()} of {filtered.length.toLocaleString()} transactions
         </p>
-      )}
-      <div className="space-y-2 md:hidden">
-        {visible.map((transaction) => (
-          <article key={transaction.id} className="rounded-lg border bg-card p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{transaction.name}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {accountById.get(transaction.accountId)?.name ?? "Account"} ·{" "}
-                  {transaction.date}
-                </div>
-              </div>
-              <div className="shrink-0 text-sm font-medium tabular-nums">
-                {fmtCurrency(transaction.amount, { sign: true })}
-              </div>
+        {visible.length ? (
+          <>
+            <div className="space-y-4 md:hidden">
+              {monthGroups.map((group) => (
+                <section key={group.month}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b pb-2">
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <h2 className="font-medium">{group.label}</h2>
+                      <span className="text-xs text-muted-foreground">
+                        {group.count.toLocaleString()} transactions
+                      </span>
+                    </div>
+                    <p className="text-xs tabular-nums text-muted-foreground">
+                      In {fmtCurrency(group.moneyIn)} · Out {fmtCurrency(group.moneyOut)}
+                    </p>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {group.transactions.map((transaction) => (
+                      <article key={transaction.id} className="rounded-lg border bg-card p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">{transaction.name}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {accountById.get(transaction.accountId)?.name ?? "Account"} ·{" "}
+                              {transaction.date}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-sm font-medium tabular-nums">
+                            {fmtCurrency(transaction.amount, { sign: true })}
+                          </div>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <Badge variant={transaction.type === "deposit" ? "default" : "outline"}>
+                            {transaction.type.replace("_", " ")}
+                          </Badge>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {transaction.category || "Uncategorized"}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
             </div>
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <Badge variant={transaction.type === "deposit" ? "default" : "outline"}>
-                {transaction.type.replace("_", " ")}
-              </Badge>
-              <span className="truncate text-xs text-muted-foreground">
-                {transaction.category || "Uncategorized"}
-              </span>
+            <div className="hidden overflow-x-auto rounded-lg border md:block">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Date</th>
+                    <th className="px-3 py-2 text-left font-medium">Account</th>
+                    <th className="px-3 py-2 text-left font-medium">Name</th>
+                    <th className="px-3 py-2 text-left font-medium">Type</th>
+                    <th className="px-3 py-2 text-left font-medium">Category</th>
+                    <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {monthGroups.map((group) => (
+                    <Fragment key={group.month}>
+                      <tr>
+                        <td colSpan={6} className="bg-muted/30 px-3 py-2">
+                          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                            <div className="flex items-baseline gap-2">
+                              <span className="font-medium">{group.label}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {group.count.toLocaleString()} transactions
+                              </span>
+                            </div>
+                            <span className="text-xs tabular-nums text-muted-foreground">
+                              In {fmtCurrency(group.moneyIn)} · Out {fmtCurrency(group.moneyOut)}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      {group.transactions.map((transaction) => (
+                        <tr key={transaction.id}>
+                          <td className="whitespace-nowrap px-3 py-2">{transaction.date}</td>
+                          <td className="max-w-48 truncate px-3 py-2">
+                            {accountById.get(transaction.accountId)?.name ?? "Account"}
+                          </td>
+                          <td className="max-w-64 truncate px-3 py-2">{transaction.name}</td>
+                          <td className="whitespace-nowrap px-3 py-2 capitalize">
+                            {transaction.type.replace("_", " ")}
+                          </td>
+                          <td className="px-3 py-2">{transaction.category || "Uncategorized"}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                            {fmtCurrency(transaction.amount, { sign: true })}
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </article>
-        ))}
-      </div>
-      <div className="hidden overflow-x-auto rounded-lg border md:block">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium">Date</th>
-              <th className="px-3 py-2 text-left font-medium">Account</th>
-              <th className="px-3 py-2 text-left font-medium">Name</th>
-              <th className="px-3 py-2 text-left font-medium">Type</th>
-              <th className="px-3 py-2 text-left font-medium">Category</th>
-              <th className="px-3 py-2 text-right font-medium">Amount</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {visible.map((transaction) => (
-              <tr key={transaction.id}>
-                <td className="whitespace-nowrap px-3 py-2">{transaction.date}</td>
-                <td className="max-w-48 truncate px-3 py-2">
-                  {accountById.get(transaction.accountId)?.name ?? "Account"}
-                </td>
-                <td className="max-w-64 truncate px-3 py-2">{transaction.name}</td>
-                <td className="whitespace-nowrap px-3 py-2 capitalize">
-                  {transaction.type.replace("_", " ")}
-                </td>
-                <td className="px-3 py-2">{transaction.category || "Uncategorized"}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                  {fmtCurrency(transaction.amount, { sign: true })}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!visible.length && (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          No transactions match these filters.
-        </p>
-      )}
+          </>
+        ) : (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No transactions match these filters.
+          </p>
+        )}
+        {visible.length < filtered.length && (
+          <div className="flex flex-wrap justify-center gap-3">
+            <Link
+              href={withParams("/activity", currentParams, {
+                limit: String(limit + PAGE_STEP),
+              })}
+              scroll={false}
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Show more (next {Math.min(PAGE_STEP, filtered.length - visible.length)})
+            </Link>
+            <Link
+              href={withParams("/activity", currentParams, {
+                limit: String(filtered.length),
+              })}
+              scroll={false}
+              className={buttonVariants({ variant: "outline" })}
+            >
+              Show all
+            </Link>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { sendPushToAll } from "@/lib/push";
 import { isRecentIncomeDate } from "@/lib/investments";
 import { rebuildAccountHistory } from "@/lib/backfill";
 import { assetClassForType } from "@/lib/account-types";
+import { chunk } from "@/lib/transaction-list";
 
 export interface SyncConnection {
   id: string;
@@ -124,9 +125,17 @@ export async function syncConnection(
 
     const { data: linkedAccounts, error: linkedAccountsError } = await supabase
       .from("accounts")
-      .select("id,asset_class")
+      .select("id,asset_class,provider_acct_id")
       .eq("connection_id", conn.id);
     if (linkedAccountsError) throw new Error(linkedAccountsError.message);
+    for (const account of linkedAccounts ?? []) {
+      if (
+        account.provider_acct_id &&
+        !accountIdByProviderId.has(account.provider_acct_id)
+      ) {
+        accountIdByProviderId.set(account.provider_acct_id, account.id);
+      }
+    }
     const allAccountIds = (linkedAccounts ?? []).map((a) => a.id as string);
     let notice = sync.notice ?? null;
     if (sync.holdingsSynced) {
@@ -194,9 +203,13 @@ export async function syncConnection(
       }
     }
     const txnsByAccount = new Map<string, typeof sync.transactions>();
+    let unknownAccountTransactions = 0;
     for (const txn of sync.transactions) {
       const accountId = accountIdByProviderId.get(txn.providerAccountId);
-      if (!accountId) continue;
+      if (!accountId) {
+        unknownAccountTransactions += 1;
+        continue;
+      }
       const batch = txnsByAccount.get(accountId) ?? [];
       batch.push(txn);
       txnsByAccount.set(accountId, batch);
@@ -204,16 +217,29 @@ export async function syncConnection(
 
     for (const [accountId, transactions] of txnsByAccount) {
       const providerTxnIds = transactions.map((t) => t.providerTxnId);
-      const { data: existingTransactions, error: existingTransactionsError } =
-        await supabase
-          .from("transactions")
-          .select("provider_txn_id,type,type_overridden")
-          .eq("account_id", accountId)
-          .in("provider_txn_id", providerTxnIds);
-      if (existingTransactionsError) throw new Error(existingTransactionsError.message);
-      const existingById = new Map(
-        (existingTransactions ?? []).map((t) => [t.provider_txn_id, t]),
-      );
+      const existingById = new Map<
+        string,
+        { type: string; type_overridden: boolean }
+      >();
+      for (const idBatch of chunk(providerTxnIds, 200)) {
+        const { data: existingTransactions, error: existingTransactionsError } =
+          await supabase
+            .from("transactions")
+            .select("provider_txn_id,type,type_overridden")
+            .eq("account_id", accountId)
+            .in("provider_txn_id", idBatch);
+        if (existingTransactionsError) {
+          throw new Error(existingTransactionsError.message);
+        }
+        for (const transaction of existingTransactions ?? []) {
+          if (transaction.provider_txn_id) {
+            existingById.set(transaction.provider_txn_id, {
+              type: transaction.type,
+              type_overridden: transaction.type_overridden,
+            });
+          }
+        }
+      }
       const rows = transactions.map((t) => {
         const existing = existingById.get(t.providerTxnId);
         const finalType = existing?.type_overridden
@@ -243,19 +269,27 @@ export async function syncConnection(
           pending: t.pending ?? false,
         };
       });
-      const { error } = await supabase
-        .from("transactions")
-        .upsert(rows, { onConflict: "account_id,provider_txn_id" });
-      if (error) throw new Error(error.message);
+      for (const rowBatch of chunk(rows, 500)) {
+        const { error } = await supabase
+          .from("transactions")
+          .upsert(rowBatch, { onConflict: "account_id,provider_txn_id" });
+        if (error) throw new Error(error.message);
+      }
     }
 
     if (sync.removedTxnIds.length && allAccountIds.length) {
-      const { error } = await supabase
-        .from("transactions")
-        .delete()
-        .in("account_id", allAccountIds)
-        .in("provider_txn_id", sync.removedTxnIds);
-      if (error) throw new Error(error.message);
+      for (const idBatch of chunk(sync.removedTxnIds, 200)) {
+        const { error } = await supabase
+          .from("transactions")
+          .delete()
+          .in("account_id", allAccountIds)
+          .in("provider_txn_id", idBatch);
+        if (error) throw new Error(error.message);
+      }
+    }
+
+    if (unknownAccountTransactions) {
+      notice = `${unknownAccountTransactions} transactions skipped for unknown accounts — will retry next sync`;
     }
 
     for (const account of linkedAccounts ?? []) {
@@ -267,7 +301,9 @@ export async function syncConnection(
     const { error: connectionUpdateError } = await supabase
       .from("connections")
       .update({
-        sync_cursor: sync.cursor ?? null,
+        sync_cursor: unknownAccountTransactions
+          ? conn.sync_cursor ?? null
+          : sync.cursor ?? null,
         status: "healthy",
         last_synced_at: now,
         last_error: null,

@@ -1,7 +1,17 @@
+import Link from "next/link";
+import { Fragment } from "react";
 import { getDataset } from "@/lib/data/provider";
 import { getSessionUser } from "@/lib/auth";
 import { capSlices, groupHoldingsBySymbol, holdingsWithShare } from "@/lib/holdings";
 import { fmtCompact, fmtCurrency, fmtShare } from "@/lib/format";
+import { buttonVariants } from "@/components/ui/button";
+import {
+  compareNewestFirst,
+  groupByMonth,
+  PAGE_STEP,
+  parseLimit,
+  withParams,
+} from "@/lib/transaction-list";
 import {
   AddPastBalanceButton,
   AddTransactionButton,
@@ -43,10 +53,13 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default async function AccountPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { id } = await params;
+  const [{ id }, queryParams] = await Promise.all([params, searchParams]);
+  const limit = parseLimit(queryParams.limit);
   const [{ accounts, institutions, snapshots, transactions, holdings }, user] =
     await Promise.all([getDataset(), getSessionUser()]);
   const isAdmin = user?.role === "admin";
@@ -56,10 +69,11 @@ export default async function AccountPage({
   const hist = snapshots
     .filter((s) => s.accountId === id)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const txns = transactions
+  const allTxns = transactions
     .filter((t) => t.accountId === id)
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 50);
+    .sort(compareNewestFirst);
+  const visibleTxns = allTxns.slice(0, limit);
+  const monthGroups = groupByMonth(visibleTxns, allTxns);
   const acctHoldings = holdings.filter((h) => h.accountId === id);
   const holdingShares = holdingsWithShare(acctHoldings);
   const holdingTotal = holdingShares.reduce((sum, holding) => sum + holding.value, 0);
@@ -268,48 +282,78 @@ export default async function AccountPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent transactions</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle>Transactions</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Showing {visibleTxns.length.toLocaleString()} of {allTxns.length.toLocaleString()}
+              </p>
+            </div>
+            <Link
+              href={`/activity?account=${encodeURIComponent(account.id)}`}
+              className={buttonVariants({ variant: "outline" })}
+            >
+              View all {allTxns.length.toLocaleString()} in Activity
+            </Link>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-3 p-3 md:hidden">
-          {txns.map((t) => (
-            <article key={t.id} className="rounded-lg border bg-background p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{t.name}</div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{t.date}</span>
-                    {isAdmin ? (
-                      <TransactionTypeSelect
-                        transactionId={t.id}
-                        transactionType={t.type}
-                        transactionName={t.name}
-                      />
-                    ) : (
-                      <Badge variant={t.type === "deposit" ? "default" : "outline"}>
-                        {TYPE_LABEL[t.type] ?? t.type}
-                      </Badge>
-                    )}
-                  </div>
+        <CardContent className="space-y-4 p-3 md:hidden">
+          {monthGroups.map((group) => (
+            <section key={group.month}>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b pb-2">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <h2 className="font-medium">{group.label}</h2>
+                  <span className="text-xs text-muted-foreground">
+                    {group.count.toLocaleString()} transactions
+                  </span>
                 </div>
-                <div
-                  className={
-                    "shrink-0 text-right font-medium tabular-nums " +
-                    (t.amount >= 0
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "")
-                  }
-                >
-                  {fmtCurrency(t.amount, { sign: true })}
-                </div>
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  In {fmtCurrency(group.moneyIn)} · Out {fmtCurrency(group.moneyOut)}
+                </p>
               </div>
-              {isAdmin && (
-                <div className="mt-3 flex justify-end border-t pt-3">
-                  <DeleteTransactionButton id={t.id} showLabel />
-                </div>
-              )}
-            </article>
+              <div className="mt-2 space-y-3">
+                {group.transactions.map((t) => (
+                  <article key={t.id} className="rounded-lg border bg-background p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{t.name}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{t.date}</span>
+                          {isAdmin ? (
+                            <TransactionTypeSelect
+                              transactionId={t.id}
+                              transactionType={t.type}
+                              transactionName={t.name}
+                            />
+                          ) : (
+                            <Badge variant={t.type === "deposit" ? "default" : "outline"}>
+                              {TYPE_LABEL[t.type] ?? t.type}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div
+                        className={
+                          "shrink-0 text-right font-medium tabular-nums " +
+                          (t.amount >= 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "")
+                        }
+                      >
+                        {fmtCurrency(t.amount, { sign: true })}
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <div className="mt-3 flex justify-end border-t pt-3">
+                        <DeleteTransactionButton id={t.id} showLabel />
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
           ))}
-          {!txns.length && (
+          {!allTxns.length && (
             <p className="py-4 text-center text-sm text-muted-foreground">
               No transactions yet.
             </p>
@@ -328,45 +372,77 @@ export default async function AccountPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {txns.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="text-muted-foreground">{t.date}</TableCell>
-                    <TableCell>{t.name}</TableCell>
-                    <TableCell>
-                      {isAdmin ? (
-                        <TransactionTypeSelect
-                          transactionId={t.id}
-                          transactionType={t.type}
-                          transactionName={t.name}
-                        />
-                      ) : (
-                        <Badge variant={t.type === "deposit" ? "default" : "outline"}>
-                          {TYPE_LABEL[t.type] ?? t.type}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell
-                      className={
-                        "text-right tabular-nums " +
-                        (t.amount >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "")
-                      }
-                    >
-                      {fmtCurrency(t.amount, { sign: true })}
-                    </TableCell>
-                    {isAdmin && (
-                      <TableCell>
-                        <DeleteTransactionButton id={t.id} />
+                {monthGroups.map((group) => (
+                  <Fragment key={group.month}>
+                    <TableRow>
+                      <TableCell colSpan={isAdmin ? 5 : 4} className="bg-muted/30">
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-medium">{group.label}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {group.count.toLocaleString()} transactions
+                            </span>
+                          </div>
+                          <span className="text-xs tabular-nums text-muted-foreground">
+                            In {fmtCurrency(group.moneyIn)} · Out {fmtCurrency(group.moneyOut)}
+                          </span>
+                        </div>
                       </TableCell>
-                    )}
-                  </TableRow>
+                    </TableRow>
+                    {group.transactions.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell className="text-muted-foreground">{t.date}</TableCell>
+                        <TableCell>{t.name}</TableCell>
+                        <TableCell>
+                          {isAdmin ? (
+                            <TransactionTypeSelect
+                              transactionId={t.id}
+                              transactionType={t.type}
+                              transactionName={t.name}
+                            />
+                          ) : (
+                            <Badge variant={t.type === "deposit" ? "default" : "outline"}>
+                              {TYPE_LABEL[t.type] ?? t.type}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell
+                          className={
+                            "text-right tabular-nums " +
+                            (t.amount >= 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "")
+                          }
+                        >
+                          {fmtCurrency(t.amount, { sign: true })}
+                        </TableCell>
+                        {isAdmin && (
+                          <TableCell>
+                            <DeleteTransactionButton id={t.id} />
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>
           </CardContent>
         </div>
       </Card>
+      {visibleTxns.length < allTxns.length && (
+        <div className="flex justify-center">
+          <Link
+            href={withParams(`/accounts/${account.id}`, {}, {
+              limit: String(limit + PAGE_STEP),
+            })}
+            scroll={false}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Show more (next {Math.min(PAGE_STEP, allTxns.length - visibleTxns.length)})
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

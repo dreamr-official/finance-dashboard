@@ -8,9 +8,41 @@ import {
   mapPlaidHoldingAssetType,
   mapPlaidInvestmentType,
 } from "./investments";
+import { fetchInvestmentTransactions } from "./integrations/plaid";
 import type { Account } from "./types";
 
 describe("Plaid investment transaction mapping", () => {
+  it("fetches investment transactions until the reported total is reached", async () => {
+    const fetchPage = async (offset: number) => ({
+      total: 5,
+      transactions: offset === 0 ? [1, 2, 3] : [4, 5],
+    });
+    await expect(fetchInvestmentTransactions(fetchPage)).resolves.toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("stops on an empty page before reaching the reported total", async () => {
+    const offsets: number[] = [];
+    const fetchPage = async (offset: number) => {
+      offsets.push(offset);
+      return {
+        total: 10,
+        transactions: offset === 0 ? [1, 2] : [],
+      };
+    };
+    await expect(fetchInvestmentTransactions(fetchPage)).resolves.toEqual([1, 2]);
+    expect(offsets).toEqual([0, 2]);
+  });
+
+  it("does not request another page once the total is reached", async () => {
+    const offsets: number[] = [];
+    const fetchPage = async (offset: number) => {
+      offsets.push(offset);
+      return { total: 2, transactions: [offset + 1, offset + 2] };
+    };
+    await expect(fetchInvestmentTransactions(fetchPage)).resolves.toEqual([1, 2]);
+    expect(offsets).toEqual([0]);
+  });
+
   it("maps contributions, dividends, and transfers by Plaid amount sign", () => {
     expect(mapPlaidInvestmentType("cash", "contribution")).toBe("deposit");
     expect(mapPlaidInvestmentType("cash", "dividend reinvestment")).toBe("dividend");

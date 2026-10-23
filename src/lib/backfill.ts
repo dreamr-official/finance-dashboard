@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAll } from "./data/fetch-all";
 
 export interface HistoryTransaction {
   date: string;
@@ -73,23 +74,29 @@ export async function rebuildAccountHistory(
   if (deleteError) throw new Error(deleteError.message);
 
   const [transactions, recorded] = await Promise.all([
-    supabase
-      .from("transactions")
-      .select("date,amount,pending")
-      .eq("account_id", accountId)
-      .order("date"),
-    supabase
-      .from("balance_snapshots")
-      .select("date")
-      .eq("account_id", accountId)
-      .eq("source", "recorded"),
+    fetchAll((from, to) =>
+      supabase
+        .from("transactions")
+        .select("date,amount,pending")
+        .eq("account_id", accountId)
+        .order("date")
+        .order("id")
+        .range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase
+        .from("balance_snapshots")
+        .select("date")
+        .eq("account_id", accountId)
+        .eq("source", "recorded")
+        .order("date")
+        .range(from, to),
+    ),
   ]);
-  if (transactions.error) throw new Error(transactions.error.message);
-  if (recorded.error) throw new Error(recorded.error.message);
-  const recordedDates = new Set((recorded.data ?? []).map((snapshot) => snapshot.date));
+  const recordedDates = new Set(recorded.map((snapshot) => snapshot.date));
   const rows = reconstructBalances(
     Number(account.current_balance),
-    (transactions.data ?? []).map((transaction) => ({
+    transactions.map((transaction) => ({
       date: transaction.date,
       amount: Number(transaction.amount),
       pending: transaction.pending,
