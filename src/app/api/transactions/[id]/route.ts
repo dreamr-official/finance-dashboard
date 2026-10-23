@@ -33,9 +33,18 @@ export async function PATCH(
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }
+  const { taxYear, ...rest } = body.data;
+  const update = {
+    ...rest,
+    ...(taxYear !== undefined ? { tax_year: taxYear } : {}),
+    ...(rest.type !== undefined ? { type_overridden: true } : {}),
+  };
+  if (!Object.keys(update).length) {
+    return Response.json({ error: "Nothing to update" }, { status: 400 });
+  }
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
-  if (Object.prototype.hasOwnProperty.call(body.data, "taxYear")) {
+  if (taxYear !== undefined) {
     const { data: transaction, error: transactionError } = await supabase
       .from("transactions")
       .select("id,type,date,account_id")
@@ -59,7 +68,6 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    const taxYear = body.data.taxYear;
     const dateYear = Number(transaction.date.slice(0, 4));
     if (taxYear !== undefined && taxYear !== null &&
         taxYear !== dateYear && taxYear !== dateYear - 1) {
@@ -71,10 +79,7 @@ export async function PATCH(
   }
   const { error } = await supabase
     .from("transactions")
-    .update({
-      ...body.data,
-      ...(body.data.type !== undefined ? { type_overridden: true } : {}),
-    })
+    .update(update)
     .eq("id", id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ ok: true });
