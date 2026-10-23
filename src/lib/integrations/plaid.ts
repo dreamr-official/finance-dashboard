@@ -76,6 +76,22 @@ export function convertPlaidTransaction(t: {
   };
 }
 
+export async function fetchInvestmentTransactions<T>(
+  fetchPage: (offset: number) => Promise<{ total: number; transactions: T[] }>,
+): Promise<T[]> {
+  const transactions: T[] = [];
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+  while (offset < total) {
+    const page = await fetchPage(offset);
+    total = page.total;
+    if (!page.transactions.length) break;
+    transactions.push(...page.transactions);
+    offset += page.transactions.length;
+  }
+  return transactions;
+}
+
 export const plaidProvider: FinanceProvider = {
   id: "plaid",
   configured: isPlaidConfigured(),
@@ -145,6 +161,7 @@ export const plaidProvider: FinanceProvider = {
         const response = await client.transactionsSync({
           access_token: accessToken,
           ...(nextCursor ? { cursor: nextCursor } : {}),
+          count: 500,
         });
         const d = response.data;
         transactions.push(...[...d.added, ...d.modified].map(convertPlaidTransaction));
@@ -212,25 +229,36 @@ export const plaidProvider: FinanceProvider = {
         }),
       );
       holdingsSynced = true;
-
-      let offset = 0;
-      let total = Number.POSITIVE_INFINITY;
-      while (offset < total) {
-        const transactionsResponse = await client.investmentsTransactionsGet({
-          access_token: accessToken,
-          start_date: startDate,
-          end_date: endDate,
-          options: { count: 500, offset },
-        });
-        total = transactionsResponse.data.total_investment_transactions;
-        const page = transactionsResponse.data.investment_transactions;
-        investmentTransactions.push(...page.map(convertPlaidInvestmentTransaction));
-        offset += page.length;
-        if (page.length === 0) break;
-      }
     } catch (error) {
-      notice = investmentNoticeForError(error);
-      if (!notice) throw error;
+      notice =
+        investmentNoticeForError(error) ??
+        `Couldn't sync investment holdings: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`;
+    }
+
+    try {
+      investmentTransactions.push(
+        ...(await fetchInvestmentTransactions(async (offset) => {
+          const transactionsResponse = await client.investmentsTransactionsGet({
+            access_token: accessToken,
+            start_date: startDate,
+            end_date: endDate,
+            options: { count: 500, offset },
+          });
+          return {
+            total: transactionsResponse.data.total_investment_transactions,
+            transactions:
+              transactionsResponse.data.investment_transactions.map(
+                convertPlaidInvestmentTransaction,
+              ),
+          };
+        })),
+      );
+    } catch (error) {
+      const transactionNotice = investmentNoticeForError(error);
+      if (!transactionNotice) throw error;
+      notice ??= transactionNotice;
     }
 
     return {

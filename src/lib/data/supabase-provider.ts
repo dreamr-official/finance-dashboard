@@ -1,22 +1,7 @@
 import { createClient } from "../supabase/server";
+import { fetchAll } from "./fetch-all";
 import type { Dataset } from "./types";
 import type { Account, Transaction } from "../types";
-
-async function fetchAll<T>(
-  fetchPage: (from: number, to: number) => PromiseLike<{
-    data: T[] | null;
-    error: { message: string } | null;
-  }>,
-): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await fetchPage(from, from + 999);
-    if (error) throw new Error(`Supabase query failed: ${error.message}`);
-    const page = data ?? [];
-    rows.push(...page);
-    if (page.length < 1000) return rows;
-  }
-}
 
 /**
  * Reads the dataset from Supabase. RLS already restricts rows to the
@@ -28,13 +13,19 @@ export async function fetchDataset(): Promise<Dataset> {
     fetchAll((from, to) => supabase.from("institutions").select("*").order("id").range(from, to)),
     fetchAll((from, to) => supabase.from("accounts").select("*").order("id").range(from, to)),
     fetchAll((from, to) =>
-      supabase.from("balance_snapshots").select("*").order("date").range(from, to),
+      supabase
+        .from("balance_snapshots")
+        .select("*")
+        .order("date")
+        .order("account_id")
+        .range(from, to),
     ),
     fetchAll((from, to) =>
       supabase
         .from("transactions")
         .select("*")
         .order("date", { ascending: false })
+        .order("id", { ascending: false })
         .range(from, to),
     ),
     fetchAll((from, to) => supabase.from("holdings").select("*").order("id").range(from, to)),

@@ -118,7 +118,7 @@ function transferPair(
   ];
 }
 
-export const demoTransactions: Transaction[] = [
+const initialDemoTransactions: Transaction[] = [
   // income / spending on BoA checking
   txn("a-bofa-chk", 2, "Payroll — Acme Corp", 3850.0, "income"),
   txn("a-bofa-chk", 4, "Whole Foods", -142.33, "expense", { category: "Groceries" }),
@@ -208,6 +208,90 @@ export const demoTransactions: Transaction[] = [
   ),
   txn("a-bofa-chk", 46, "Online Banking transfer to Schwab", -750.0, "transfer_out"),
   txn("a-bofa-chk", 1, "Transfer to Happen HYSA", -500.0, "transfer_out", { pending: true }),
+];
+
+function daysAgoForDate(date: string): number {
+  const todayDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  return Math.round(
+    (todayDate.getTime() - new Date(`${date}T00:00:00.000Z`).getTime()) / DAY,
+  );
+}
+
+const recurringTransactions: Transaction[] = (() => {
+  const rows: Transaction[] = [];
+  for (let daysAgo = 535; daysAgo >= 0; daysAgo -= 14) {
+    rows.push(txn("a-bofa-chk", daysAgo, "Payroll — Acme Corp", 3850, "income"));
+  }
+  for (let daysAgo = 537, week = 0; daysAgo >= 0; daysAgo -= 7, week += 1) {
+    rows.push(
+      txn(
+        "a-bofa-chk",
+        daysAgo,
+        "Whole Foods",
+        -Math.round((45 + Math.abs(walk(17, week)) * 80) * 100) / 100,
+        "expense",
+        { category: "Groceries" },
+      ),
+      txn(
+        "a-bofa-chk",
+        daysAgo,
+        "Trader Joe's",
+        -Math.round((35 + Math.abs(walk(29, week)) * 65) * 100) / 100,
+        "expense",
+        { category: "Groceries" },
+      ),
+      txn(
+        "a-bofa-chk",
+        daysAgo,
+        "Neighborhood Cafe",
+        -Math.round((12 + Math.abs(walk(41, week)) * 38) * 100) / 100,
+        "expense",
+        { category: "Dining" },
+      ),
+    );
+  }
+  for (let monthsAgo = 17; monthsAgo >= 0; monthsAgo -= 1) {
+    const date = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - monthsAgo, 1),
+    )
+      .toISOString()
+      .slice(0, 10);
+    const daysAgo = daysAgoForDate(date);
+    rows.push(
+      txn("a-bofa-chk", daysAgo, "Rent", -2400, "expense", { category: "Housing" }),
+      txn(
+        "a-bofa-chk",
+        daysAgo,
+        "PG&E Utilities",
+        -Math.round((82 + Math.abs(walk(53, monthsAgo)) * 34) * 100) / 100,
+        "expense",
+        { category: "Utilities" },
+      ),
+    );
+  }
+
+  const currentDate = new Date(`${today.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  for (
+    let date = new Date(Date.UTC(2026, 0, 15)), index = 0;
+    date <= currentDate;
+    date = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 15)), index += 1
+  ) {
+    rows.push(
+      txn(
+        "a-fid-roth",
+        daysAgoForDate(date.toISOString().slice(0, 10)),
+        "Roth IRA monthly contribution",
+        500,
+        "deposit",
+      ),
+    );
+  }
+  return rows;
+})();
+
+export const demoTransactions: Transaction[] = [
+  ...initialDemoTransactions,
+  ...recurringTransactions,
 ];
 
 export const demoHoldings: Holding[] = [
