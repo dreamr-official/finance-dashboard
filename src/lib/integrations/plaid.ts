@@ -30,19 +30,22 @@ export function plaidClient() {
 }
 
 /** Plaid account type/subtype → our account_type. */
-export function plaidAccountType(type?: string, subtype?: string): string {
+export function plaidAccountType(type?: string, subtype?: string, name?: string): string {
   if (type === "depository") return subtype === "savings" ? "savings" : "checking";
   if (type === "credit") return "credit_card";
   if (type === "loan") return "loan";
   if (type === "investment") {
     const normalizedSubtype = subtype?.toLowerCase().replace(/[\s-]+/g, "_");
+    if (/401\s*\(?k\)?/i.test(subtype ?? "") || /\broth\b.*\b401\s*\(?k\)?/i.test(name ?? "")) {
+      return "401k";
+    }
     if (normalizedSubtype === "roth" || normalizedSubtype === "roth_ira") {
       return "roth_ira";
     }
+    if (/\broth\b/i.test(name ?? "")) return "roth_ira";
     if (normalizedSubtype === "ira" || normalizedSubtype === "traditional_ira") {
       return "traditional_ira";
     }
-    if (normalizedSubtype === "401k") return "401k";
     return "brokerage";
   }
   return "other";
@@ -134,7 +137,7 @@ export const plaidProvider: FinanceProvider = {
     try {
       const accountResponse = await client.accountsGet({ access_token: accessToken });
       accounts = accountResponse.data.accounts.map((a) => {
-        const type = plaidAccountType(a.type, a.subtype ?? undefined);
+        const type = plaidAccountType(a.type, a.subtype ?? undefined, a.official_name ?? a.name);
         const current = a.balances.current ?? 0;
         const balance =
           type === "credit_card" || type === "loan" ? -current : current;

@@ -207,9 +207,12 @@ const initialDemoTransactions: Transaction[] = [
   ]),
   // transfers between investment accounts (rollover, correctly excluded)
   ...transferPair("a-fid-brok", "a-fid-roth", 140, 1000, "Fidelity Roth IRA"),
+  ...transferPair("a-bofa-chk", "a-fid-roth", 25, 1250, "Fidelity Roth IRA"),
+  ...transferPair("a-bofa-sav", "a-rh-roth", 18, 750, "Robinhood Roth IRA"),
   // checking outflows that funded the deposits above (unlinked; matched by the Transfers page)
   ...(
     [
+      [3, 250, "Robinhood"],
       [28, 2000, "Fidelity"], [58, 2000, "Fidelity"], [120, 2000, "Fidelity"],
       [150, 2500, "Fidelity"], [200, 2000, "Fidelity"], [260, 3000, "Fidelity"],
       [340, 2000, "Fidelity"], [35, 1500, "Robinhood"], [95, 1500, "Robinhood"],
@@ -221,6 +224,8 @@ const initialDemoTransactions: Transaction[] = [
   ).map(([daysAgo, amount, to]) =>
     txn("a-bofa-chk", daysAgo + 1, `Online Banking transfer to ${to}`, -amount, "transfer_out"),
   ),
+  txn("a-bofa-chk", 2, "ACH transfer to Fidelity", -475, "transfer_out"),
+  txn("a-bofa-chk", 12, "ACH transfer to Fidelity", -625, "transfer_out"),
   txn("a-bofa-chk", 46, "Online Banking transfer to Schwab", -750.0, "transfer_out"),
   txn("a-bofa-chk", 1, "Transfer to Happen HYSA", -500.0, "transfer_out", { pending: true }),
   txn("a-bofa-cc", 2, "Grocery purchase", -240.0, "expense", { category: "Groceries" }),

@@ -11,6 +11,8 @@ import {
 } from "@/lib/transfer-match";
 import type { Account } from "@/lib/types";
 import { fmtCurrency, fmtDate } from "@/lib/format";
+import { reconcileInvestmentFunding } from "@/lib/reconcile";
+import type { FundingIssue, InvestmentFundingSummary } from "@/lib/reconcile";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -42,7 +44,7 @@ export default async function TransfersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const [{ accounts, transactions }, params] = await Promise.all([
+  const [{ accounts, institutions, transactions }, params] = await Promise.all([
     getDataset(),
     searchParams,
   ]);
@@ -55,6 +57,12 @@ export default async function TransfersPage({
       : "";
 
   const report = buildTransferReport(transactions, accounts, {
+    today,
+    from,
+    to,
+    accountId: accountId || undefined,
+  });
+  const funding = reconcileInvestmentFunding(accounts, institutions, transactions, {
     today,
     from,
     to,
@@ -130,6 +138,8 @@ export default async function TransfersPage({
           </Link>
         </div>
       </form>
+
+      <FundingCard groups={funding} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
         <SummaryCard
@@ -284,6 +294,162 @@ function SummaryCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function FundingCard({ groups }: { groups: InvestmentFundingSummary[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Banks → investments: did it all arrive?</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Bank transfers are grouped by the investment institution they funded.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {groups.length ? (
+          <ul className="divide-y">
+            {groups.map((group) => {
+              const inTransit = group.missingArrival.some((item) => item.status === "in_transit");
+              const needsReview =
+                group.missingArrival.some((item) => item.status === "needs_review") ||
+                group.missingSource.length > 0;
+              const status =
+                group.difference === 0
+                  ? "All arrived"
+                  : inTransit && !needsReview
+                    ? `${fmtCurrency(Math.abs(group.difference))} in transit`
+                    : `${fmtCurrency(Math.abs(group.difference))} doesn't match — review`;
+              const statusClass =
+                group.difference === 0
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : inTransit && !needsReview
+                    ? "text-amber-700 dark:text-amber-400"
+                    : "text-red-700 dark:text-red-400";
+              const unpairedCount = group.missingArrival.length + group.missingSource.length;
+
+              return (
+                <li key={group.institutionId ?? group.institutionName} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-medium">{group.institutionName}</h3>
+                      <p className="mt-1 flex flex-wrap gap-x-1.5 text-sm">
+                        <span className="text-muted-foreground">Sent from your banks</span>
+                        <span className="font-medium tabular-nums">
+                          {fmtCurrency(group.sentFromBanks)}
+                        </span>
+                        <span className="text-muted-foreground">· Arrived</span>
+                        <span className="font-medium tabular-nums">{fmtCurrency(group.arrived)}</span>
+                      </p>
+                    </div>
+                    <span className={`shrink-0 text-sm font-medium ${statusClass}`}>{status}</span>
+                  </div>
+                  {group.perAccount.some((item) => item.arrived > 0) && (
+                    <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      {group.perAccount
+                        .filter((item) => item.arrived > 0)
+                        .map((item) => (
+                          <span key={item.account.id}>
+                            <Link href={`/accounts/${item.account.id}`} className="hover:underline">
+                              {item.account.name}
+                            </Link>{" "}
+                            <span className="font-medium tabular-nums text-foreground">
+                              {fmtCurrency(item.arrived)}
+                            </span>
+                          </span>
+                        ))}
+                    </p>
+                  )}
+                  {(group.withdrawnToBanks > 0 || group.arrivedInBanks > 0) && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Withdrawn to banks{" "}
+                      <span className="font-medium tabular-nums text-foreground">
+                        {fmtCurrency(group.withdrawnToBanks)}
+                      </span>{" "}
+                      · Arrived in banks{" "}
+                      <span className="font-medium tabular-nums text-foreground">
+                        {fmtCurrency(group.arrivedInBanks)}
+                      </span>
+                    </p>
+                  )}
+                  {unpairedCount > 0 && (
+                    <details className="mt-2 text-xs">
+                      <summary className="cursor-pointer text-muted-foreground">
+                        Review {unpairedCount} unmatched {unpairedCount === 1 ? "transaction" : "transactions"}
+                      </summary>
+                      <ul className="mt-1 divide-y rounded-md border px-3">
+                        {group.missingArrival.map((item) => (
+                          <FundingIssueRow
+                            key={item.transaction.id}
+                            issue={item}
+                            incoming={false}
+                          />
+                        ))}
+                        {group.missingSource.map((item) => (
+                          <FundingIssueRow
+                            key={item.transaction.id}
+                            issue={item}
+                            incoming
+                          />
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No bank-to-investment funding found in this date range.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FundingIssueRow({
+  issue,
+  incoming,
+}: {
+  issue: FundingIssue;
+  incoming: boolean;
+}) {
+  return (
+    <li className="flex min-w-0 flex-col gap-1 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
+          <span>{fmtDate(`${issue.transaction.date}T00:00:00`)}</span>
+          <Link href={`/accounts/${issue.account.id}`} className="hover:underline">
+            {issue.account.name}
+          </Link>
+        </div>
+        <p className="break-words text-foreground">
+          {issue.transaction.name}
+          <span className="ml-1 text-muted-foreground">
+            · {incoming ? "Arrived, no bank source" : "Left bank, no arrival"}
+          </span>
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="font-medium tabular-nums">
+          {fmtCurrency(
+            incoming ? Math.abs(issue.transaction.amount) : -Math.abs(issue.transaction.amount),
+            { sign: true },
+          )}
+        </span>
+        <span
+          className={
+            issue.status === "in_transit"
+              ? "text-amber-700 dark:text-amber-400"
+              : "text-red-700 dark:text-red-400"
+          }
+        >
+          {issue.status === "in_transit" ? "In transit" : "Needs review"}
+        </span>
+      </div>
+    </li>
   );
 }
 

@@ -1,9 +1,9 @@
 import { getDataset } from "@/lib/data/provider";
 import { appToday } from "@/lib/dates";
 import { rothContributions, DEFAULT_ROTH_LIMITS } from "@/lib/finance";
-import { classifyInvestmentFlows } from "@/lib/contributions";
+import { classifyInvestmentFlows, rothLookalikes } from "@/lib/contributions";
 import type { ContributionEntry } from "@/lib/contributions";
-import { sortAccountsByClass } from "@/lib/account-types";
+import { ACCOUNT_TYPE_LABELS, sortAccountsByClass } from "@/lib/account-types";
 import {
   capSlices,
   groupHoldingsByAssetType,
@@ -118,6 +118,9 @@ export default async function InvestmentsPage() {
       return { account, amount, hint };
     })
     .sort((a, b) => b.amount - a.amount);
+  const contributionHintsByAccount = new Map(
+    contributionByAccount.map(({ account, hint }) => [account.id, hint]),
+  );
   const contributionsByDate = new Map<string, number>();
   for (const flow of flows.counted) {
     const { transaction, amount } = flow;
@@ -152,6 +155,7 @@ export default async function InvestmentsPage() {
     };
   });
   const roth = rothContributions(accounts, transactions, TAX_YEAR);
+  const rothNameLookalikes = rothLookalikes(accounts);
   const rothLimit = DEFAULT_ROTH_LIMITS[TAX_YEAR];
   const rothPct = rothLimit
     ? Math.min(100, (roth.deposits / rothLimit) * 100)
@@ -215,6 +219,12 @@ export default async function InvestmentsPage() {
             {!contributionByAccount.length && (
               <p className="text-sm text-muted-foreground">No investment accounts yet.</p>
             )}
+            <Link
+              href="/transfers"
+              className="block border-t pt-3 text-sm text-muted-foreground hover:underline"
+            >
+              Check these against your bank transfers →
+            </Link>
           </CardContent>
         </Card>
       </div>
@@ -336,9 +346,53 @@ export default async function InvestmentsPage() {
               style={{ width: `${rothPct ?? 0}%` }}
             />
           </div>
+          {roth.byAccount.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {roth.byAccount.map(({ account, deposits }) => (
+                <div key={account.id}>
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <Link
+                      href={`/accounts/${account.id}`}
+                      className="min-w-0 truncate hover:underline"
+                    >
+                      {account.name}
+                    </Link>
+                    <span className="shrink-0 tabular-nums">
+                      {fmtCurrency(deposits, { decimals: 0 })}
+                    </span>
+                  </div>
+                  {deposits === 0 && (
+                    <Link
+                      href={`/accounts/${account.id}`}
+                      className="mt-0.5 block text-xs text-muted-foreground hover:underline"
+                    >
+                      {contributionHintsByAccount.get(account.id) ??
+                        `No qualifying contributions for ${TAX_YEAR} — review account activity.`}
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           <p className="mt-2 text-xs text-muted-foreground">
             Withdrawals this year: {fmtCurrency(roth.withdrawals, { decimals: 0 })}
           </p>
+          {rothNameLookalikes.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {rothNameLookalikes.map((account) => (
+                <p key={account.id} className="text-xs text-muted-foreground">
+                  “{account.name}” looks like a Roth IRA but is set to{" "}
+                  {ACCOUNT_TYPE_LABELS[account.type]} — it isn’t counted.{" "}
+                  <Link
+                    href={`/accounts/${account.id}`}
+                    className="underline hover:text-foreground"
+                  >
+                    Open the account and change its type to Roth IRA.
+                  </Link>
+                </p>
+              ))}
+            </div>
+          )}
           {!rothAccounts.length ? (
             <p className="mt-2 text-sm text-muted-foreground">
               No account is marked as a Roth IRA — open the account and set its type to Roth IRA.

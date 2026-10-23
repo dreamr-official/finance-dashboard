@@ -402,7 +402,7 @@ describe("Roth contributions", () => {
       2026,
     );
 
-    expect(result).toEqual({ deposits: 2500, withdrawals: 800 });
+    expect(result).toMatchObject({ deposits: 2500, withdrawals: 800 });
     expect(isWithdrawal(transaction("roth", "2026-03-02", -50, "fee"))).toBe(false);
   });
 
@@ -436,6 +436,15 @@ describe("Plaid account mapping", () => {
     ["loan", "student", "loan"],
   ])("maps %s/%s to %s", (type, subtype, expected) => {
     expect(plaidAccountType(type, subtype)).toBe(expected);
+  });
+
+  it("uses the account name to recognize Roth IRA accounts with generic IRA subtype", () => {
+    expect(plaidAccountType("investment", "ira", "ROTH IRA")).toBe("roth_ira");
+  });
+
+  it("keeps Roth 401(k) accounts classified as 401(k)", () => {
+    expect(plaidAccountType("investment", "ira", "Roth 401(k)")).toBe("401k");
+    expect(plaidAccountType("investment", "roth_401k", "Roth 401k")).toBe("401k");
   });
 });
 

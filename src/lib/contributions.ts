@@ -150,31 +150,52 @@ export function rothContributions(
   accounts: Account[],
   transactions: Transaction[],
   taxYear: number,
-): { deposits: number; withdrawals: number } {
-  const rothIds = new Set(
-    accounts.filter((account) => account.type === "roth_ira").map((account) => account.id),
-  );
+): {
+  deposits: number;
+  withdrawals: number;
+  byAccount: { account: Account; deposits: number; withdrawals: number }[];
+} {
+  const rothAccounts = accounts.filter((account) => account.type === "roth_ira");
   const { counted, notCounted } = classifyInvestmentFlows(accounts, transactions);
   const matchingYear = (transaction: Transaction) =>
     (transaction.taxYear ?? Number(transaction.date.slice(0, 4))) === taxYear;
   const rothCounted = counted.filter(
-    (flow) => rothIds.has(flow.account.id) && matchingYear(flow.transaction),
+    (flow) =>
+      rothAccounts.some((account) => account.id === flow.account.id) &&
+      matchingYear(flow.transaction),
   );
   const qualifyingTransfers = notCounted.filter(
     (flow) =>
-      rothIds.has(flow.account.id) &&
+      rothAccounts.some((account) => account.id === flow.account.id) &&
       flow.source === "transfer_from_investment" &&
       flow.fromAccount?.assetClass !== "retirement" &&
       matchingYear(flow.transaction),
   );
-  return {
+  const byAccount = rothAccounts.map((account) => ({
+    account,
     deposits:
       rothCounted
-        .filter((flow) => flow.amount > 0)
+        .filter((flow) => flow.account.id === account.id && flow.amount > 0)
         .reduce((total, flow) => total + flow.amount, 0) +
-      qualifyingTransfers.reduce((total, flow) => total + flow.amount, 0),
+      qualifyingTransfers
+        .filter((flow) => flow.account.id === account.id)
+        .reduce((total, flow) => total + flow.amount, 0),
     withdrawals: rothCounted
-      .filter((flow) => flow.amount < 0)
+      .filter((flow) => flow.account.id === account.id && flow.amount < 0)
       .reduce((total, flow) => total + Math.abs(flow.amount), 0),
+  }));
+  return {
+    deposits: byAccount.reduce((total, account) => total + account.deposits, 0),
+    withdrawals: byAccount.reduce((total, account) => total + account.withdrawals, 0),
+    byAccount,
   };
+}
+
+export function rothLookalikes(accounts: Account[]): Account[] {
+  return accounts.filter(
+    (account) =>
+      INVESTMENT_ASSET_CLASSES.has(account.assetClass) &&
+      account.type !== "roth_ira" &&
+      /\broth\b/i.test(account.name),
+  );
 }
