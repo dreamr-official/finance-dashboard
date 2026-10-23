@@ -4,6 +4,7 @@ export function summarizeActivity(transactions: Transaction[], accounts: Account
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   return transactions.reduce(
     (summary, transaction) => {
+      if (transaction.type === "buy" || transaction.type === "sell") return summary;
       if (transaction.amount > 0 && transaction.type !== "transfer_in") {
         summary.moneyIn += transaction.amount;
       }

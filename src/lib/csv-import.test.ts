@@ -25,4 +25,21 @@ describe("parseCsv", () => {
     );
     expect(first.skipped).toBe(1);
   });
+
+  it("skips blank amounts with a reason and accepts a leading minus before currency", () => {
+    const result = parseCsv(
+      "2026-01-01,Missing amount,,expense\n2026-01-02,Refund,-$4.50,expense",
+    );
+    expect(result.skipped).toBe(1);
+    expect(result.skippedReasons).toContain("missing amount");
+    expect(result.rows.map((row) => row.amount)).toEqual([-4.5]);
+  });
+
+  it("accepts dollar-before-minus and parenthesized currency but not trailing minus", () => {
+    const result = parseCsv(
+      "2026-01-01,Refund,$-4.50\n2026-01-02,Refund,($4.50)\n2026-01-03,Refund,4.50-",
+    );
+    expect(result.rows.map((row) => row.amount)).toEqual([-4.5, -4.5]);
+    expect(result.skipped).toBe(1);
+  });
 });

@@ -11,6 +11,7 @@ const patchSchema = z.object({
     .optional(),
   name: z.string().min(1).max(200).optional(),
   category: z.string().max(100).optional(),
+  taxYear: z.number().int().min(2000).max(2100).nullable().optional(),
 });
 
 /** Admin-only: correct a transaction's classification (e.g. mark a
@@ -28,15 +29,52 @@ export async function PATCH(
     return Response.json({ error: "Mutations require Supabase" }, { status: 501 });
   }
   const { id } = await params;
-  const body = patchSchema.safeParse(await req.json());
+  const body = patchSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient();
+  if (Object.prototype.hasOwnProperty.call(body.data, "taxYear")) {
+    const { data: transaction, error: transactionError } = await supabase
+      .from("transactions")
+      .select("id,type,date,account_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (transactionError) {
+      return Response.json({ error: transactionError.message }, { status: 500 });
+    }
+    if (!transaction) return Response.json({ error: "Not found" }, { status: 404 });
+    const { data: account, error: accountError } = await supabase
+      .from("accounts")
+      .select("type")
+      .eq("id", transaction.account_id)
+      .maybeSingle();
+    if (accountError) {
+      return Response.json({ error: accountError.message }, { status: 500 });
+    }
+    if (transaction.type !== "deposit" || account?.type !== "roth_ira") {
+      return Response.json(
+        { error: "Tax year can only be set for Roth IRA deposits" },
+        { status: 400 },
+      );
+    }
+    const taxYear = body.data.taxYear;
+    const dateYear = Number(transaction.date.slice(0, 4));
+    if (taxYear !== undefined && taxYear !== null &&
+        taxYear !== dateYear && taxYear !== dateYear - 1) {
+      return Response.json(
+        { error: "Tax year must match the transaction year or the previous year" },
+        { status: 400 },
+      );
+    }
+  }
   const { error } = await supabase
     .from("transactions")
-    .update({ ...body.data, type_overridden: true })
+    .update({
+      ...body.data,
+      ...(body.data.type !== undefined ? { type_overridden: true } : {}),
+    })
     .eq("id", id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ ok: true });

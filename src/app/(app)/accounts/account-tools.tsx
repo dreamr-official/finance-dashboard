@@ -173,7 +173,11 @@ export function ImportCsvDialog({ account }: { account: Account }) {
       return;
     }
     setResult(
-      `Imported ${data.imported} transactions; skipped ${data.skipped} invalid rows (re-importing is safe).`,
+      `Imported ${data.imported} transactions; skipped ${data.skipped} invalid rows${
+        data.skippedReasons?.length
+          ? ` (${[...new Set(data.skippedReasons)].join(", ")})`
+          : ""
+      } (re-importing is safe).`,
     );
     router.refresh();
   }

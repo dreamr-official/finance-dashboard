@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     return authErrorResponse(error);
   }
   if (isDemoMode()) return Response.json({ error: "Requires Supabase" }, { status: 501 });
-  const parsed = subscriptionSchema.safeParse(await req.json());
+  const parsed = subscriptionSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: parsed.error.issues }, { status: 400 });
   const supabase = await createClient();
   const { error } = await supabase.from("push_subscriptions").upsert(
@@ -43,7 +43,7 @@ export async function DELETE(req: Request) {
     return authErrorResponse(error);
   }
   if (isDemoMode()) return Response.json({ error: "Requires Supabase" }, { status: 501 });
-  const parsed = z.object({ endpoint: z.string().url() }).safeParse(await req.json());
+  const parsed = z.object({ endpoint: z.string().url() }).safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: parsed.error.issues }, { status: 400 });
   const supabase = await createClient();
   const { error } = await supabase

@@ -14,7 +14,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DonutChart } from "@/components/charts/donut-chart";
 import { chartColor } from "@/components/charts/colors";
 import Link from "next/link";
-import { getUpcomingSubscriptions } from "@/lib/subscriptions";
+import {
+  getUpcomingSubscriptions,
+  isSubscriptionDatePredicted,
+  getSubscriptionNextPaymentDate,
+} from "@/lib/subscriptions";
 
 
 export default async function OverviewPage() {
@@ -30,6 +34,7 @@ export default async function OverviewPage() {
     .filter(
       (transaction) =>
         (transaction.type === "dividend" || transaction.type === "interest") &&
+        transaction.amount > 0 &&
         transaction.date >= cutoffDate &&
         transaction.date <= todayDate,
     )
@@ -155,7 +160,7 @@ export default async function OverviewPage() {
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{subscription.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      {fmtDate(subscription.nextExpectedDate)} · {subscription.dateVerified ? "Verified" : "Predicted"}
+                      {fmtDate(getSubscriptionNextPaymentDate(subscription, today))} · {isSubscriptionDatePredicted(subscription, today) ? "Predicted" : "Verified"}
                     </div>
                   </div>
                   <span className="shrink-0 text-sm tabular-nums">{fmtCurrency(subscription.amount)}</span>

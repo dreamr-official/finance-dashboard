@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   if (isDemoMode()) {
     return Response.json({ error: "Mutations require Supabase" }, { status: 501 });
   }
-  const body = subSchema.safeParse(await req.json());
+  const body = subSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }

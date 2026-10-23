@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/login?error=not_authorized");
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <AppSidebar demoMode={isDemoMode()} role={user.role} />

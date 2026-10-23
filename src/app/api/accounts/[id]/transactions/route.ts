@@ -30,7 +30,7 @@ export async function POST(
     return Response.json({ error: "Mutations require Supabase" }, { status: 501 });
   }
   const { id } = await params;
-  const body = schema.safeParse(await req.json());
+  const body = schema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: body.error.issues }, { status: 400 });
   }

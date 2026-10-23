@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { PlaidConnections } from "./plaid-connections";
 import { PushNotifications } from "@/components/push-notifications";
 import { isPushConfigured } from "@/lib/env";
+import { MfaSettings } from "@/components/mfa-settings";
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
@@ -63,10 +64,21 @@ export default async function SettingsPage() {
           <div className="text-muted-foreground">
             {isDemoMode()
               ? "Demo mode — authentication disabled until Supabase is configured."
-              : "Supabase Auth with allowlist + MFA."}
+              : "Supabase Auth with an authorized-user allowlist."}
           </div>
         </CardContent>
       </Card>
+
+      {user && !isDemoMode() && (
+        <Card>
+          <CardHeader>
+            <CardTitle>2-step login</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MfaSettings />
+          </CardContent>
+        </Card>
+      )}
 
       {user?.role === "admin" && !isDemoMode() && (
         <Card>

@@ -33,7 +33,7 @@ export function computeNetWorth(accounts: Account[]): NetWorthSummary {
     liabilities,
     cash,
     investments,
-    change: { day: 0, week: 0, month: 0, year: 0 },
+    change: { day: null, week: null, month: null, year: null },
   };
 }
 
@@ -58,7 +58,7 @@ export function netWorthSeries(
     let total = 0;
     for (const a of accounts) {
       const snaps = byAccount.get(a.id) ?? [];
-      let v = snaps.length ? 0 : last[a.id];
+      let v = snaps.length ? snaps[0].balance : last[a.id];
       for (const snapshot of snaps) {
         if (snapshot.date > d) break;
         v = snapshot.balance;
@@ -73,13 +73,16 @@ export function applyNetWorthChange(
   summary: NetWorthSummary,
   series: { date: string; value: number }[],
 ): NetWorthSummary {
-  if (series.length < 2) return summary;
+  if (series.length < 2) {
+    summary.change = { day: null, week: null, month: null, year: null };
+    return summary;
+  }
   const now = series[series.length - 1].value;
   const lookup = (days: number) => {
     const cutoff = new Date(series[series.length - 1].date);
-    cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setUTCDate(cutoff.getUTCDate() - days);
     const prior = [...series].reverse().find((p) => new Date(p.date) <= cutoff);
-    return prior ? now - prior.value : 0;
+    return prior ? now - prior.value : null;
   };
   summary.change = {
     day: lookup(1),
@@ -98,7 +101,9 @@ export function rothContributions(
 ) {
   const rothIds = new Set(accounts.filter((a) => a.type === "roth_ira").map((a) => a.id));
   const txns = transactions.filter(
-    (t) => rothIds.has(t.accountId) && t.date.startsWith(String(taxYear)),
+    (t) =>
+      rothIds.has(t.accountId) &&
+      (t.taxYear ?? Number(t.date.slice(0, 4))) === taxYear,
   );
   const deposits = txns.filter(isContribution).reduce((s, t) => s + Math.abs(t.amount), 0);
   const withdrawals = txns.filter(isWithdrawal).reduce((s, t) => s + Math.abs(t.amount), 0);

@@ -11,9 +11,12 @@ secrets ever go in the repo, chat, or git.
    `supabase/migrations/0002_connection_tokens.sql`, and
    `supabase/migrations/0003_plaid_sync.sql`, and
    `supabase/migrations/0004_realtime_push.sql`, and
-   `supabase/migrations/0005_investments_history.sql`, then `supabase/seed.sql`
+   `supabase/migrations/0005_investments_history.sql`,
+   `supabase/migrations/0006_tax_year.sql`, then `supabase/seed.sql`
    (edit the emails first). Migration 0004 enables Realtime refreshes and
    creates the RLS-protected push subscription table.
+   Migration 0006 adds:
+   `alter table transactions add column if not exists tax_year smallint check (tax_year between 2000 and 2100);`
 3. In **Authentication → Users → Add user**, create the three accounts
    (admin + two viewers). Then re-run the two `insert` statements in
    `seed.sql` so the allowlist rows attach to the real user IDs.
