@@ -66,6 +66,7 @@ export function BalanceChart({
             stroke="var(--color-chart-1, #10b981)"
             strokeWidth={2}
             fill="url(#bal)"
+            isAnimationActive={false}
           />
         </AreaChart>
       </ResponsiveContainer>

@@ -11,6 +11,7 @@ export function fmtCurrency(n: number, opts: { sign?: boolean; decimals?: number
 }
 
 export function fmtCompact(n: number) {
+  if (Math.abs(n) < 0.5) return "$0";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",

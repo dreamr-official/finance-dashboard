@@ -108,6 +108,7 @@ export function NetWorthChart({
               stroke="var(--color-chart-1, #10b981)"
               strokeWidth={2}
               fill="url(#nw)"
+              isAnimationActive={false}
             />
           </AreaChart>
         </ResponsiveContainer>
