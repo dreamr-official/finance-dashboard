@@ -122,7 +122,7 @@ function HoldingDialog({
                 name="symbol"
                 defaultValue={holding?.symbol}
                 placeholder="e.g. VTI"
-                className="uppercase"
+                className="uppercase placeholder:normal-case"
                 autoCapitalize="characters"
                 maxLength={20}
                 required

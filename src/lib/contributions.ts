@@ -60,7 +60,16 @@ export function classifyInvestmentFlows(
     const pair = pairByTransaction.get(transaction);
     switch (transaction.type) {
       case "deposit":
-        counted.push(entry(transaction, account, Math.abs(transaction.amount), "deposit"));
+        counted.push(
+          entry(
+            transaction,
+            account,
+            Math.abs(transaction.amount),
+            "deposit",
+            pair?.from,
+            pair?.to,
+          ),
+        );
         break;
       case "withdrawal":
         counted.push(entry(transaction, account, -Math.abs(transaction.amount), "withdrawal"));
@@ -146,35 +155,72 @@ export function classifyInvestmentFlows(
   return { counted, notCounted };
 }
 
+export function contributionTaxYear(
+  transaction: Pick<Transaction, "taxYear" | "date" | "name">,
+): number {
+  if (transaction.taxYear !== undefined && transaction.taxYear !== null) {
+    return transaction.taxYear;
+  }
+  const dateYear = Number(transaction.date.slice(0, 4));
+  const beforeTaxDeadline = transaction.date.slice(5, 10) <= "04-15";
+  if (!beforeTaxDeadline) return dateYear;
+  const namedYear = transaction.name.match(/\b(\d{4})\b/);
+  const priorYear = dateYear - 1;
+  if (/prior year/i.test(transaction.name) || Number(namedYear?.[1]) === priorYear) {
+    return priorYear;
+  }
+  return dateYear;
+}
+
 export function rothContributions(
   accounts: Account[],
   transactions: Transaction[],
   taxYear: number,
-): { deposits: number; withdrawals: number } {
-  const rothIds = new Set(
-    accounts.filter((account) => account.type === "roth_ira").map((account) => account.id),
-  );
+): {
+  deposits: number;
+  withdrawals: number;
+  byAccount: { account: Account; deposits: number; withdrawals: number }[];
+} {
+  const rothAccounts = accounts.filter((account) => account.type === "roth_ira");
   const { counted, notCounted } = classifyInvestmentFlows(accounts, transactions);
-  const matchingYear = (transaction: Transaction) =>
-    (transaction.taxYear ?? Number(transaction.date.slice(0, 4))) === taxYear;
+  const matchingYear = (transaction: Transaction) => contributionTaxYear(transaction) === taxYear;
   const rothCounted = counted.filter(
-    (flow) => rothIds.has(flow.account.id) && matchingYear(flow.transaction),
+    (flow) =>
+      rothAccounts.some((account) => account.id === flow.account.id) &&
+      matchingYear(flow.transaction),
   );
   const qualifyingTransfers = notCounted.filter(
     (flow) =>
-      rothIds.has(flow.account.id) &&
+      rothAccounts.some((account) => account.id === flow.account.id) &&
       flow.source === "transfer_from_investment" &&
       flow.fromAccount?.assetClass !== "retirement" &&
       matchingYear(flow.transaction),
   );
-  return {
+  const byAccount = rothAccounts.map((account) => ({
+    account,
     deposits:
       rothCounted
-        .filter((flow) => flow.amount > 0)
+        .filter((flow) => flow.account.id === account.id && flow.amount > 0)
         .reduce((total, flow) => total + flow.amount, 0) +
-      qualifyingTransfers.reduce((total, flow) => total + flow.amount, 0),
+      qualifyingTransfers
+        .filter((flow) => flow.account.id === account.id)
+        .reduce((total, flow) => total + flow.amount, 0),
     withdrawals: rothCounted
-      .filter((flow) => flow.amount < 0)
+      .filter((flow) => flow.account.id === account.id && flow.amount < 0)
       .reduce((total, flow) => total + Math.abs(flow.amount), 0),
+  }));
+  return {
+    deposits: byAccount.reduce((total, account) => total + account.deposits, 0),
+    withdrawals: byAccount.reduce((total, account) => total + account.withdrawals, 0),
+    byAccount,
   };
+}
+
+export function rothLookalikes(accounts: Account[]): Account[] {
+  return accounts.filter(
+    (account) =>
+      INVESTMENT_ASSET_CLASSES.has(account.assetClass) &&
+      account.type !== "roth_ira" &&
+      /\broth\b/i.test(account.name),
+  );
 }

@@ -12,9 +12,11 @@ function decodeVapidKey(value: string) {
 export function PushNotifications({
   configured,
   publicKey,
+  isAdmin,
 }: {
   configured: boolean;
   publicKey: string;
+  isAdmin: boolean;
 }) {
   const [supported, setSupported] = useState(false);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
@@ -100,11 +102,13 @@ export function PushNotifications({
   return (
     <div className="space-y-3">
       {!configured ? (
-        <p className="text-sm text-muted-foreground">
-          To enable notifications, set NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
-          and VAPID_SUBJECT in Vercel. Generate them with{" "}
-          <code>npx web-push generate-vapid-keys</code>, then redeploy.
-        </p>
+        isAdmin ? (
+          <p className="text-sm text-muted-foreground">
+            To enable notifications, set NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
+            and VAPID_SUBJECT in Vercel. Generate them with{" "}
+            <code>npx web-push generate-vapid-keys</code>, then redeploy.
+          </p>
+        ) : null
       ) : !supported ? (
         <p className="text-sm text-muted-foreground">
           Push notifications are not supported in this browser. On iPhone, first add

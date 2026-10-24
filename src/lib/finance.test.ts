@@ -67,7 +67,7 @@ describe("signed net worth", () => {
       netWorth: 200,
       assets: 300,
       liabilities: 100,
-      cash: 80,
+      cash: 100,
       investments: 200,
     });
   });
@@ -107,7 +107,7 @@ describe("signed net worth", () => {
     ]);
   });
 
-  it("adds today when no snapshots exist and does not duplicate today's snapshot", () => {
+  it("uses current balances for today when a snapshot already exists", () => {
     expect(netWorthSeries([account("cash", 120)], [], "2026-10-23")).toEqual([
       { date: "2026-10-23", value: 120 },
     ]);
@@ -117,7 +117,27 @@ describe("signed net worth", () => {
         [{ accountId: "cash", date: "2026-10-23", balance: 100 }],
         "2026-10-23",
       ),
-    ).toEqual([{ date: "2026-10-23", value: 100 }]);
+    ).toEqual([{ date: "2026-10-23", value: 120 }]);
+  });
+
+  it("uses current net worth as the header delta endpoint", () => {
+    const summary = computeNetWorth([account("cash", 120)]);
+    expect(
+      applyNetWorthChange(summary, [
+        { date: "2026-10-20", value: 100 },
+        { date: "2026-10-23", value: 110 },
+      ]).change,
+    ).toEqual({ day: 20, week: null, month: null, year: null });
+  });
+
+  it("keeps the latest demo snapshot equal to each account's current balance", () => {
+    const { accounts, snapshots } = demoDataset;
+    for (const account of accounts) {
+      const latest = snapshots
+        .filter((snapshot) => snapshot.accountId === account.id)
+        .sort((left, right) => right.date.localeCompare(left.date))[0];
+      expect(latest.balance).toBe(account.currentBalance);
+    }
   });
 
   it("does not inflate deltas when a new investment has only today's snapshot", () => {
@@ -162,6 +182,7 @@ describe("signed net worth", () => {
         { accountId: "same", date: "2026-10-22", balance: 10 },
         { accountId: "new", date: "2026-10-23", balance: 40 },
       ],
+      [],
       "2026-10-23",
       1,
     );
@@ -185,6 +206,7 @@ describe("signed net worth", () => {
         { accountId: "card", date: "2026-10-22", balance: -550 },
         { accountId: "card", date: "2026-10-23", balance: -600 },
       ],
+      [],
       "2026-10-23",
       1,
     );
@@ -202,11 +224,151 @@ describe("signed net worth", () => {
     const [change] = accountChanges(
       [account("zero-start", 100)],
       [{ accountId: "zero-start", date: "2026-10-22", balance: 0 }],
+      [],
       "2026-10-23",
       1,
     );
 
     expect(change).toMatchObject({ start: 0, change: 100, pct: null, isNew: false });
+  });
+
+  it("splits deposit-only changes into money added with no market change", () => {
+    const [change] = accountChanges(
+      [account("investment", 1250, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [transaction("investment", "2026-10-17", 250, "deposit")],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ change: 250, moneyAdded: 250, marketChange: 0 });
+  });
+
+  it("splits pure market movement with no money added", () => {
+    const [change] = accountChanges(
+      [account("investment", 1100, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ change: 100, moneyAdded: 0, marketChange: 100 });
+  });
+
+  it("separates deposits from market movement in the same window", () => {
+    const [change] = accountChanges(
+      [account("investment", 1250, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [transaction("investment", "2026-10-18", 200, "deposit")],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ change: 250, moneyAdded: 200, marketChange: 50 });
+  });
+
+  it("does not count trades, dividends, interest, or fees as money added", () => {
+    const [change] = accountChanges(
+      [account("investment", 1125, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [
+        transaction("investment", "2026-10-17", -600, "buy"),
+        transaction("investment", "2026-10-18", 500, "sell"),
+        transaction("investment", "2026-10-19", 50, "dividend"),
+        transaction("investment", "2026-10-20", 15, "interest"),
+        transaction("investment", "2026-10-21", -10, "fee"),
+      ],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ moneyAdded: 0, marketChange: 125 });
+  });
+
+  it("counts supported boundary flows and rounds their sum to cents", () => {
+    const [change] = accountChanges(
+      [account("investment", 1065.3, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [
+        transaction("investment", "2026-10-17", 100, "deposit"),
+        transaction("investment", "2026-10-17", -50, "withdrawal"),
+        transaction("investment", "2026-10-18", 30, "transfer_in"),
+        transaction("investment", "2026-10-18", -20, "transfer_out"),
+        transaction("investment", "2026-10-19", 10, "income"),
+        transaction("investment", "2026-10-19", -5, "expense"),
+        transaction("investment", "2026-10-20", 0.1, "other"),
+        transaction("investment", "2026-10-21", 0.2, "other"),
+      ],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ moneyAdded: 65.3, marketChange: 0 });
+  });
+
+  it("starts the transaction window at the snapshot actually used, before the cutoff", () => {
+    const [change] = accountChanges(
+      [account("investment", 1300, "investment", "brokerage")],
+      [
+        { accountId: "investment", date: "2026-10-14", balance: 1000 },
+        { accountId: "investment", date: "2026-10-20", balance: 1200 },
+      ],
+      [
+        transaction("investment", "2026-10-14", 1000, "deposit"),
+        transaction("investment", "2026-10-15", 100, "deposit"),
+        transaction("investment", "2026-10-22", 50, "deposit"),
+        transaction("investment", "2026-10-24", 1000, "deposit"),
+      ],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({
+      start: 1000,
+      moneyAdded: 150,
+      marketChange: 150,
+    });
+  });
+
+  it("excludes pending investment transactions from money added", () => {
+    const pendingDeposit = {
+      ...transaction("investment", "2026-10-17", 250, "deposit"),
+      pending: true,
+    };
+    const [change] = accountChanges(
+      [account("investment", 1100, "investment", "brokerage")],
+      [{ accountId: "investment", date: "2026-10-16", balance: 1000 }],
+      [pendingDeposit],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ moneyAdded: 0, marketChange: 100 });
+  });
+
+  it("leaves split values null for cash accounts", () => {
+    const [change] = accountChanges(
+      [account("cash", 1100)],
+      [{ accountId: "cash", date: "2026-10-16", balance: 1000 }],
+      [transaction("cash", "2026-10-17", 100, "deposit")],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ isNew: false, moneyAdded: null, marketChange: null });
+  });
+
+  it("leaves split values null for new investment accounts", () => {
+    const [change] = accountChanges(
+      [account("new-investment", 1100, "investment", "brokerage")],
+      [{ accountId: "new-investment", date: "2026-10-23", balance: 1100 }],
+      [transaction("new-investment", "2026-10-22", 100, "deposit")],
+      "2026-10-23",
+      7,
+    );
+
+    expect(change).toMatchObject({ isNew: true, moneyAdded: null, marketChange: null });
   });
 
   it("reconciles account changes with header deltas when all accounts have history", () => {
@@ -234,7 +396,7 @@ describe("signed net worth", () => {
       ["week", 7],
       ["month", 30],
     ] as const) {
-      const total = accountChanges(accounts, snapshots, "2026-10-23", days).reduce(
+      const total = accountChanges(accounts, snapshots, [], "2026-10-23", days).reduce(
         (sum, entry) => sum + (entry.change ?? 0),
         0,
       );
@@ -260,7 +422,7 @@ describe("Roth contributions", () => {
       2026,
     );
 
-    expect(result).toEqual({ deposits: 2500, withdrawals: 800 });
+    expect(result).toMatchObject({ deposits: 2500, withdrawals: 800 });
     expect(isWithdrawal(transaction("roth", "2026-03-02", -50, "fee"))).toBe(false);
   });
 
@@ -289,11 +451,24 @@ describe("Plaid account mapping", () => {
     ["credit", "credit card", "credit_card"],
     ["investment", "ira", "traditional_ira"],
     ["investment", "traditional ira", "traditional_ira"],
+    ["investment", "sep ira", "traditional_ira"],
+    ["investment", "simple ira", "traditional_ira"],
     ["investment", "roth ira", "roth_ira"],
     ["investment", "401k", "401k"],
+    ["investment", "403b", "401k"],
+    ["investment", "457b", "401k"],
     ["loan", "student", "loan"],
   ])("maps %s/%s to %s", (type, subtype, expected) => {
     expect(plaidAccountType(type, subtype)).toBe(expected);
+  });
+
+  it("uses the account name to recognize Roth IRA accounts with generic IRA subtype", () => {
+    expect(plaidAccountType("investment", "ira", "ROTH IRA")).toBe("roth_ira");
+  });
+
+  it("keeps Roth 401(k) accounts classified as 401(k)", () => {
+    expect(plaidAccountType("investment", "ira", "Roth 401(k)")).toBe("401k");
+    expect(plaidAccountType("investment", "roth_401k", "Roth 401k")).toBe("401k");
   });
 });
 
@@ -435,11 +610,14 @@ describe("summarizeActivity", () => {
       transaction("7", "checking", 30, "income"),
       transaction("8", "brokerage", -5000, "buy"),
       transaction("9", "brokerage", 4000, "sell"),
+      transaction("10", "checking", 15, "interest"),
+      transaction("11", "brokerage", 5, "dividend"),
     ];
 
     expect(summarizeActivity(transactions, accounts)).toEqual({
       moneyIn: 240,
       moneyOut: 25,
+      interestAndDividends: 20,
       contributions: 250,
     });
   });

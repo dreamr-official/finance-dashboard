@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Fragment } from "react";
 import { getDataset } from "@/lib/data/provider";
-import { summarizeActivity } from "@/lib/activity";
-import { fmtCurrency } from "@/lib/format";
+import { summarizeActivity, summarizeWhereItWent } from "@/lib/activity";
+import { fmtCurrency, fmtDate } from "@/lib/format";
+import { sortAccountsByClass } from "@/lib/account-types";
 import { TRANSACTION_TYPE_LABELS, transactionCountLabel } from "@/lib/transactions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,18 +34,44 @@ const TYPE_OPTIONS = [
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
+function formatPeriodDate(date: string, includeYear = false) {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(includeYear ? { year: "numeric" } : {}),
+    timeZone: "UTC",
+  });
+}
+
 export default async function ActivityPage({
   searchParams,
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const [{ accounts, transactions }, params] = await Promise.all([
+  const [{ accounts, institutions, transactions }, params] = await Promise.all([
     getDataset(),
     searchParams,
   ]);
   const filters = parseTransactionFilters(params);
+  const periodLabel = filters.month
+    ? new Date(`${filters.month}-01T00:00:00Z`).toLocaleDateString("en-US", {
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      })
+    : filters.from && filters.to
+      ? `${formatPeriodDate(filters.from, filters.from.slice(0, 4) !== filters.to.slice(0, 4))} – ${formatPeriodDate(filters.to, filters.from.slice(0, 4) !== filters.to.slice(0, 4))}`
+      : filters.from
+        ? `From ${formatPeriodDate(filters.from, true)}`
+        : filters.to
+          ? `Through ${formatPeriodDate(filters.to, true)}`
+          : "All time";
   const limit = parseLimit(params.limit);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
+  const sortedAccounts = sortAccountsByClass(
+    accounts,
+    new Map(institutions.map((institution) => [institution.id, institution.name])),
+  );
   const filtered = filterTransactions(transactions, filters);
   const summary = summarizeActivity(filtered, accounts, transactions);
   const visible = filtered.slice(0, limit);
@@ -57,20 +84,7 @@ export default async function ActivityPage({
     to: filters.to,
     q: filters.q,
   };
-  const categories = new Map<string, number>();
-  for (const transaction of filtered) {
-    if (
-      (transaction.type === "expense" || transaction.type === "fee") &&
-      transaction.amount < 0
-    ) {
-      const category = transaction.category?.trim() || "Uncategorized";
-      categories.set(
-        category,
-        (categories.get(category) ?? 0) + Math.abs(transaction.amount),
-      );
-    }
-  }
-  const whereItWent = [...categories.entries()].sort((a, b) => b[1] - a[1]);
+  const whereItWent = summarizeWhereItWent(filtered, transactions, accounts);
   const maxCategoryAmount = whereItWent[0]?.[1] ?? 0;
 
   return (
@@ -94,7 +108,7 @@ export default async function ActivityPage({
             className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
           >
             <option value="">All accounts</option>
-            {accounts.map((account) => (
+            {sortedAccounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.name}
               </option>
@@ -106,7 +120,7 @@ export default async function ActivityPage({
           <select
             name="type"
             defaultValue={filters.type}
-            className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground capitalize md:text-sm"
+            className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
           >
             <option value="">All types</option>
             {TYPE_OPTIONS.map((option) => (
@@ -166,12 +180,17 @@ export default async function ActivityPage({
         </div>
       </form>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-        <SummaryCard title="Money in" amount={summary.moneyIn} />
-        <SummaryCard title="Money out" amount={summary.moneyOut} />
-        <div className="col-span-2 sm:col-span-1">
-          <SummaryCard title="Investment contributions" amount={summary.contributions} />
-        </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+        <SummaryCard title={`Money in · ${periodLabel}`} amount={summary.moneyIn} />
+        <SummaryCard title={`Money out · ${periodLabel}`} amount={summary.moneyOut} />
+        <SummaryCard
+          title={`Interest & dividends · ${periodLabel}`}
+          amount={summary.interestAndDividends}
+        />
+        <SummaryCard
+          title={`Investment contributions · ${periodLabel}`}
+          amount={summary.contributions}
+        />
       </div>
 
       <Card>
@@ -229,7 +248,7 @@ export default async function ActivityPage({
                             <div className="truncate text-sm font-medium">{transaction.name}</div>
                             <div className="truncate text-xs text-muted-foreground">
                               {accountById.get(transaction.accountId)?.name ?? "Account"} ·{" "}
-                              {transaction.date}
+                              {fmtDate(transaction.date)}
                             </div>
                           </div>
                           <div className="shrink-0 text-sm font-medium tabular-nums">
@@ -282,12 +301,12 @@ export default async function ActivityPage({
                       </tr>
                       {group.transactions.map((transaction) => (
                         <tr key={transaction.id}>
-                          <td className="whitespace-nowrap px-3 py-2">{transaction.date}</td>
+                          <td className="whitespace-nowrap px-3 py-2">{fmtDate(transaction.date)}</td>
                           <td className="max-w-48 truncate px-3 py-2">
                             {accountById.get(transaction.accountId)?.name ?? "Account"}
                           </td>
                           <td className="max-w-64 truncate px-3 py-2">{transaction.name}</td>
-                          <td className="whitespace-nowrap px-3 py-2 capitalize">
+                          <td className="whitespace-nowrap px-3 py-2">
                             {TRANSACTION_TYPE_LABELS[transaction.type]}
                           </td>
                           <td className="px-3 py-2">{transaction.category || "Uncategorized"}</td>

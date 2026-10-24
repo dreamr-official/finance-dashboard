@@ -35,7 +35,7 @@ export const NON_BANK_DEPOSIT_PATTERNS: RegExp[] = [
   /rollover/i,
   /reinvest/i,
 ];
-export const MATCH_WINDOW_DAYS = 5;
+export const MATCH_WINDOW_DAYS = 7;
 export const AMOUNT_TOLERANCE_CENTS = 1;
 
 export type TransferDirection = "out" | "in";

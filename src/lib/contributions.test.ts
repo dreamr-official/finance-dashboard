@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { classifyInvestmentFlows, rothContributions } from "./contributions";
+import {
+  classifyInvestmentFlows,
+  rothContributions,
+  rothLookalikes,
+} from "./contributions";
 import type { Account, Transaction } from "./types";
 
 function account(
@@ -80,6 +84,18 @@ describe("classifyInvestmentFlows", () => {
     ]);
   });
 
+  it("attaches a matched source account to deposit flows", () => {
+    const cash = account("cash", "cash", "checking");
+    const brokerage = account("brokerage", "investment");
+    const transferOut = transaction("cash-out", "cash", "transfer_out", -500, "Transfer", "deposit-pair");
+    const deposit = transaction("deposit", "brokerage", "deposit", 500, "ACH deposit", "deposit-pair");
+    const result = classifyInvestmentFlows([cash, brokerage], [transferOut, deposit]);
+
+    expect(result.counted).toMatchObject([
+      { transaction: deposit, fromAccount: cash, toAccount: brokerage },
+    ]);
+  });
+
   it("does not count transfers from brokerage in portfolio contributions but counts them for Roth", () => {
     const accounts = [
       account("brokerage", "investment"),
@@ -99,7 +115,7 @@ describe("classifyInvestmentFlows", () => {
         fromAccount: accounts[0],
       },
     ]);
-    expect(rothContributions(accounts, [out, incoming], 2026)).toEqual({
+    expect(rothContributions(accounts, [out, incoming], 2026)).toMatchObject({
       deposits: 800,
       withdrawals: 0,
     });
@@ -114,7 +130,7 @@ describe("classifyInvestmentFlows", () => {
     const incoming = transaction("roth-in", "roth", "transfer_in", 1200, "Transfer", "ira-roth");
 
     expect(classifyInvestmentFlows(accounts, [out, incoming]).counted).toEqual([]);
-    expect(rothContributions(accounts, [out, incoming], 2026)).toEqual({
+    expect(rothContributions(accounts, [out, incoming], 2026)).toMatchObject({
       deposits: 0,
       withdrawals: 0,
     });
@@ -169,6 +185,86 @@ describe("classifyInvestmentFlows", () => {
 
     expect(rothContributions([roth], [explicit, fallback], 2025).deposits).toBe(300);
     expect(rothContributions([roth], [explicit, fallback], 2026).deposits).toBe(200);
+  });
+
+  it("infers prior-year Roth contributions before the tax deadline from their name", () => {
+    const roth = account("roth", "retirement", "roth_ira");
+    const priorYear = {
+      ...transaction("prior-year", "roth", "deposit", 100, "Roth contribution prior year"),
+      date: "2026-03-10",
+    };
+    const namedYear = {
+      ...transaction("named-year", "roth", "deposit", 200, "Roth contribution 2025"),
+      date: "2026-04-15",
+    };
+    const tooLate = {
+      ...transaction("too-late", "roth", "deposit", 50, "Roth contribution 2025"),
+      date: "2026-04-16",
+    };
+    const earlierCentury = {
+      ...transaction("earlier-century", "roth", "deposit", 75, "Roth contribution 1999"),
+      date: "2000-04-15",
+    };
+
+    expect(rothContributions([roth], [priorYear, namedYear, tooLate], 2025).deposits).toBe(300);
+    expect(rothContributions([roth], [priorYear, namedYear, tooLate], 2026).deposits).toBe(50);
+    expect(rothContributions([roth], [earlierCentury], 1999).deposits).toBe(75);
+  });
+
+  it("returns per-account Roth deposits and withdrawals, including accounts with zeroes", () => {
+    const brokerage = account("brokerage", "investment");
+    const roths = [
+      account("roth-deposit", "retirement", "roth_ira"),
+      account("roth-withdrawal", "retirement", "roth_ira"),
+      account("roth-transfer", "retirement", "roth_ira"),
+      account("roth-empty", "retirement", "roth_ira"),
+    ];
+    const deposit = transaction("deposit", "roth-deposit", "deposit", 120);
+    const withdrawal = transaction("withdrawal", "roth-withdrawal", "withdrawal", -40);
+    const out = transaction("brokerage-out", "brokerage", "transfer_out", -500, "Transfer", "pair");
+    const incoming = transaction("roth-in", "roth-transfer", "transfer_in", 500, "Transfer", "pair");
+
+    const result = rothContributions(
+      [brokerage, ...roths],
+      [deposit, withdrawal, out, incoming],
+      2026,
+    );
+
+    expect(result.byAccount).toEqual([
+      { account: roths[0], deposits: 120, withdrawals: 0 },
+      { account: roths[1], deposits: 0, withdrawals: 40 },
+      { account: roths[2], deposits: 500, withdrawals: 0 },
+      { account: roths[3], deposits: 0, withdrawals: 0 },
+    ]);
+    expect(result).toMatchObject({ deposits: 620, withdrawals: 40 });
+    expect(
+      classifyInvestmentFlows([brokerage, ...roths], [out, incoming]).notCounted.find(
+        (flow) => flow.transaction.id === incoming.id,
+      ),
+    ).toMatchObject({
+      transaction: incoming,
+      amount: 500,
+      source: "transfer_from_investment",
+      fromAccount: brokerage,
+    });
+  });
+
+  it("finds Roth-named investment accounts that are not typed as Roth IRAs", () => {
+    const brokerage = { ...account("brokerage", "investment"), name: "Fidelity Roth Brokerage" };
+    const roth401k = {
+      ...account("roth-401k", "retirement", "401k"),
+      name: "Company Roth 401(k)",
+    };
+    const rothIra = {
+      ...account("roth-ira", "retirement", "roth_ira"),
+      name: "Fidelity Roth IRA",
+    };
+    const cash = { ...account("cash", "cash", "checking"), name: "Roth checking" };
+
+    expect(rothLookalikes([brokerage, roth401k, rothIra, cash])).toEqual([
+      brokerage,
+      roth401k,
+    ]);
   });
 
   it("surfaces positive other transactions without counting them", () => {

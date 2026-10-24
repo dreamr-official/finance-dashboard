@@ -28,9 +28,10 @@ export function ContributionsChart({
   const ticks = chartTicks(chartData);
   const dateByTime = new Map(chartData.map((point) => [point.t, point.date]));
   return (
-    <div className="h-64 w-full">
-      <ResponsiveContainer>
-        <LineChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+    <div>
+      <div className="h-64 w-full">
+        <ResponsiveContainer>
+          <LineChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
           <XAxis
             dataKey="t"
@@ -39,7 +40,7 @@ export function ContributionsChart({
             domain={chartTimeDomain(chartData)}
             ticks={ticks}
             tickFormatter={(value) => formatChartTime(Number(value), spanDays)}
-            tick={{ fontSize: 11 }}
+            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             minTickGap={48}
             axisLine={false}
             tickLine={false}
@@ -47,7 +48,7 @@ export function ContributionsChart({
           <YAxis
             tickFormatter={(value) => fmtCompact(value)}
             width={64}
-            tick={{ fontSize: 11 }}
+            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             axisLine={false}
             tickLine={false}
           />
@@ -75,8 +76,12 @@ export function ContributionsChart({
             activeDot
             isAnimationActive={false}
           />
-        </LineChart>
-      </ResponsiveContainer>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Total put in over time (running total)
+      </p>
     </div>
   );
 }

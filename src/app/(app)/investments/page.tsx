@@ -1,16 +1,23 @@
 import { getDataset } from "@/lib/data/provider";
+import { getSessionUser } from "@/lib/auth";
 import { appToday } from "@/lib/dates";
 import { rothContributions, DEFAULT_ROTH_LIMITS } from "@/lib/finance";
-import { classifyInvestmentFlows } from "@/lib/contributions";
+import {
+  classifyInvestmentFlows,
+  contributionTaxYear,
+  rothLookalikes,
+} from "@/lib/contributions";
 import type { ContributionEntry } from "@/lib/contributions";
-import { sortAccountsByClass } from "@/lib/account-types";
+import { ACCOUNT_TYPE_LABELS, sortAccountsByClass } from "@/lib/account-types";
 import {
   capSlices,
   groupHoldingsByAssetType,
   groupHoldingsBySymbol,
   holdingsWithShare,
 } from "@/lib/holdings";
-import { fmtCompact, fmtCurrency, fmtDate, fmtShare } from "@/lib/format";
+import { fmtCompact, fmtCurrency, fmtDate, fmtPct, fmtShare } from "@/lib/format";
+import { Delta } from "@/components/delta";
+import { TRANSACTION_TYPE_LABELS } from "@/lib/transactions";
 import {
   Card,
   CardContent,
@@ -25,28 +32,32 @@ import Link from "next/link";
 function contributionLabel(flow: ContributionEntry) {
   switch (flow.source) {
     case "deposit":
-      return "Deposit";
-    case "withdrawal":
-      return "Withdrawal";
     case "transfer_from_cash":
-      return `From ${flow.fromAccount?.name ?? "cash account"}`;
-    case "transfer_unmatched":
-      return flow.transaction.type === "transfer_in" ? "Transfer in" : "Transfer out";
-    case "transfer_to_cash":
-      return `To ${flow.toAccount?.name ?? "cash account"}`;
-    case "transfer_out_unmatched":
-      return "Transfer out";
     case "transfer_from_investment":
-      return `From ${flow.fromAccount?.name ?? "investment account"}`;
+      return flow.fromAccount
+        ? `from ${flow.fromAccount.name}${flow.fromAccount.assetClass === "investment" || flow.fromAccount.assetClass === "retirement" ? " (your account)" : ""}`
+        : "source not found";
+    case "withdrawal":
+      return TRANSACTION_TYPE_LABELS.withdrawal;
+    case "transfer_unmatched":
+      return "source not found";
+    case "transfer_to_cash":
+      return flow.toAccount
+        ? `to ${flow.toAccount.name}`
+        : TRANSACTION_TYPE_LABELS.transfer_out;
+    case "transfer_out_unmatched":
+      return TRANSACTION_TYPE_LABELS.transfer_out;
     case "other":
-      return "Other";
+      return TRANSACTION_TYPE_LABELS.other;
   }
-  return "Transfer";
+  return TRANSACTION_TYPE_LABELS.transfer_in;
 }
 
 export default async function InvestmentsPage() {
   const TAX_YEAR = Number(appToday().slice(0, 4));
-  const { accounts, institutions, transactions, holdings } = await getDataset();
+  const [{ accounts, institutions, transactions, holdings }, user] =
+    await Promise.all([getDataset(), getSessionUser()]);
+  const isAdmin = user?.role === "admin";
   const rothAccounts = accounts.filter((account) => account.type === "roth_ira");
   const investmentAccounts = accounts.filter(
     (a) => a.assetClass === "investment" || a.assetClass === "retirement",
@@ -74,6 +85,28 @@ export default async function InvestmentsPage() {
   const allTimeContributions = flows.counted
     .filter((flow) => flow.amount > 0)
     .reduce((sum, flow) => sum + flow.amount, 0);
+  const rothTransfersByAccount = new Map<
+    string,
+    { amount: number; sources: Set<string> }
+  >();
+  for (const flow of flows.notCounted) {
+    if (
+      flow.source !== "transfer_from_investment" ||
+      flow.account.type !== "roth_ira" ||
+      flow.fromAccount?.assetClass === "retirement" ||
+      contributionTaxYear(flow.transaction) !== TAX_YEAR ||
+      flow.amount <= 0
+    ) {
+      continue;
+    }
+    const existing = rothTransfersByAccount.get(flow.account.id) ?? {
+      amount: 0,
+      sources: new Set<string>(),
+    };
+    existing.amount += flow.amount;
+    if (flow.fromAccount) existing.sources.add(flow.fromAccount.name);
+    rothTransfersByAccount.set(flow.account.id, existing);
+  }
   const contributionByAccount = investAccounts
     .map((account) => {
       const counted = flows.counted.filter((flow) => flow.account.id === account.id);
@@ -118,6 +151,9 @@ export default async function InvestmentsPage() {
       return { account, amount, hint };
     })
     .sort((a, b) => b.amount - a.amount);
+  const contributionHintsByAccount = new Map(
+    contributionByAccount.map(({ account, hint }) => [account.id, hint]),
+  );
   const contributionsByDate = new Map<string, number>();
   for (const flow of flows.counted) {
     const { transaction, amount } = flow;
@@ -152,6 +188,7 @@ export default async function InvestmentsPage() {
     };
   });
   const roth = rothContributions(accounts, transactions, TAX_YEAR);
+  const rothNameLookalikes = rothLookalikes(accounts);
   const rothLimit = DEFAULT_ROTH_LIMITS[TAX_YEAR];
   const rothPct = rothLimit
     ? Math.min(100, (roth.deposits / rothLimit) * 100)
@@ -185,14 +222,22 @@ export default async function InvestmentsPage() {
             <CardTitle>Where your contributions went</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {contributionByAccount.map(({ account, amount, hint }) => (
+            {contributionByAccount.map(({ account, amount, hint }) => {
+              const rothTransfer = rothTransfersByAccount.get(account.id);
+              return (
               <div
                 key={account.id}
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
               >
                 <div className="min-w-0">
                   <div className="truncate text-sm">{account.name}</div>
-                  {hint && (
+                  {rothTransfer && (
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {fmtCurrency(rothTransfer.amount, { sign: true, decimals: 0 })} moved from{" "}
+                      {[...rothTransfer.sources].join(", ")} (counts toward IRS limit)
+                    </div>
+                  )}
+                  {isAdmin && hint && (
                     <Link
                       href={`/accounts/${account.id}`}
                       className="mt-1 block text-xs text-muted-foreground hover:underline"
@@ -211,10 +256,19 @@ export default async function InvestmentsPage() {
                 </div>
                 <div className="text-sm tabular-nums">{fmtCurrency(amount, { decimals: 0 })}</div>
               </div>
-            ))}
+              );
+            })}
             {!contributionByAccount.length && (
-              <p className="text-sm text-muted-foreground">No investment accounts yet.</p>
+              <p className="text-sm text-muted-foreground">
+                {isAdmin ? "No investment accounts yet." : "No activity yet"}
+              </p>
             )}
+            <Link
+              href="/transfers"
+              className="block border-t pt-3 text-sm text-muted-foreground hover:underline"
+            >
+              Check these against your bank transfers →
+            </Link>
           </CardContent>
         </Card>
       </div>
@@ -267,7 +321,9 @@ export default async function InvestmentsPage() {
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No holdings yet — link via Plaid (Settings → Grant investment access) or add manually.
+                {isAdmin
+                  ? "No holdings yet — link via Plaid (Settings → Grant investment access) or add manually."
+                  : "No activity yet"}
               </p>
             )}
           </CardContent>
@@ -285,7 +341,9 @@ export default async function InvestmentsPage() {
               />
             ) : (
               <p className="text-sm text-muted-foreground">
-                No holdings yet — link via Plaid (Settings → Grant investment access) or add manually.
+                {isAdmin
+                  ? "No holdings yet — link via Plaid (Settings → Grant investment access) or add manually."
+                  : "No activity yet"}
               </p>
             )}
           </CardContent>
@@ -301,7 +359,7 @@ export default async function InvestmentsPage() {
             <ContributionsChart data={contributionHistory} />
           ) : (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No contribution activity to chart yet.
+              {isAdmin ? "No contribution activity to chart yet." : "No activity yet"}
             </p>
           )}
         </CardContent>
@@ -319,8 +377,8 @@ export default async function InvestmentsPage() {
         <CardContent>
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span className="tabular-nums font-medium">
-              {fmtCurrency(roth.deposits, { decimals: 0 })}
-              {rothLimit ? ` of ${fmtCurrency(rothLimit, { decimals: 0 })}` : ""}
+              {fmtCurrency(roth.deposits, { decimals: 0 })} contributed
+              {rothLimit ? ` · limit ${fmtCurrency(rothLimit, { decimals: 0 })}` : ""}
             </span>
             {rothLimit && (
               <span className={roth.deposits > rothLimit ? "text-destructive" : "text-muted-foreground"}>
@@ -336,19 +394,75 @@ export default async function InvestmentsPage() {
               style={{ width: `${rothPct ?? 0}%` }}
             />
           </div>
+          {rothLimit && roth.deposits > rothLimit && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Contributions over the IRS limit can owe a 6% penalty each year unless removed
+              before the tax deadline.
+            </p>
+          )}
+          {roth.byAccount.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {roth.byAccount.map(({ account, deposits }) => (
+                <div key={account.id}>
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <Link
+                      href={`/accounts/${account.id}`}
+                      className="min-w-0 truncate hover:underline"
+                    >
+                      {account.name}
+                    </Link>
+                    <span className="shrink-0 tabular-nums">
+                      {fmtCurrency(deposits, { decimals: 0 })}
+                    </span>
+                  </div>
+                  {deposits === 0 && (
+                    isAdmin ? (
+                    <Link
+                      href={`/accounts/${account.id}`}
+                      className="mt-0.5 block text-xs text-muted-foreground hover:underline"
+                    >
+                      {contributionHintsByAccount.get(account.id) ??
+                        `No qualifying contributions for ${TAX_YEAR} — review account activity.`}
+                    </Link>
+                    ) : <p className="mt-0.5 text-xs text-muted-foreground">No activity yet</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           <p className="mt-2 text-xs text-muted-foreground">
             Withdrawals this year: {fmtCurrency(roth.withdrawals, { decimals: 0 })}
           </p>
+          {isAdmin && rothNameLookalikes.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {rothNameLookalikes.map((account) => (
+                <p key={account.id} className="text-xs text-muted-foreground">
+                  “{account.name}” looks like a Roth IRA but is set to{" "}
+                  {ACCOUNT_TYPE_LABELS[account.type]} — it isn’t counted.{" "}
+                  <Link
+                    href={`/accounts/${account.id}`}
+                    className="underline hover:text-foreground"
+                  >
+                    Open the account and change its type to Roth IRA.
+                  </Link>
+                </p>
+              ))}
+            </div>
+          )}
           {!rothAccounts.length ? (
             <p className="mt-2 text-sm text-muted-foreground">
-              No account is marked as a Roth IRA — open the account and set its type to Roth IRA.
+              {isAdmin
+                ? "No account is marked as a Roth IRA — open the account and set its type to Roth IRA."
+                : "No activity yet"}
             </p>
           ) : (
             roth.deposits === 0 && (
-              <p className="mt-2 text-sm text-muted-foreground">
-                No contributions found for {TAX_YEAR}. Qualifying transfers from cash or a
-                brokerage count automatically; IRA-to-IRA transfers do not count toward the limit.
-              </p>
+              isAdmin && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  No contributions found for {TAX_YEAR}. Qualifying transfers from cash or a
+                  brokerage count automatically; IRA-to-IRA transfers do not count toward the limit.
+                </p>
+              )
             )
           )}
         </CardContent>
@@ -378,17 +492,40 @@ export default async function InvestmentsPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
-                    <div className="text-xs text-muted-foreground">Total contributed</div>
+                    <div className="text-xs text-muted-foreground">Total put in</div>
                     <div className="tabular-nums font-medium">
                       {fmtCurrency(s.totalDeposits, { decimals: 0 })}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Net contributions</div>
+                    <div className="text-xs text-muted-foreground">Put in, after withdrawals</div>
                     <div className="tabular-nums font-medium">
                       {fmtCurrency(s.netContributions, { decimals: 0 })}
                     </div>
                   </div>
+                  {(() => {
+                    const gainLoss = s.currentValue - s.netContributions;
+                    const gainPct =
+                      s.netContributions > 0 ? (gainLoss / s.netContributions) * 100 : null;
+                    return (
+                      <div className="col-span-2 flex items-start justify-between gap-3 border-t pt-2">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Gain / loss</div>
+                          <p className="text-xs text-muted-foreground">
+                            Value minus money put in that&apos;s tracked here
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <Delta value={gainLoss} />
+                          {gainPct !== null && (
+                            <div className="text-xs tabular-nums text-muted-foreground">
+                              {fmtPct(gainPct)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-muted-foreground">
@@ -401,8 +538,18 @@ export default async function InvestmentsPage() {
                         key={flow.transaction.id}
                         className="flex items-center justify-between gap-3 text-sm"
                       >
-                        <span className="text-muted-foreground">
-                          {fmtDate(flow.transaction.date)} · {contributionLabel(flow)}
+                        <span className="min-w-0 break-words text-muted-foreground">
+                          {fmtDate(flow.transaction.date)} ·{" "}
+                          <span
+                            className={
+                              !flow.fromAccount &&
+                              (flow.source === "deposit" || flow.source === "transfer_unmatched")
+                                ? "text-muted-foreground"
+                                : "text-foreground"
+                            }
+                          >
+                            {contributionLabel(flow)}
+                          </span>
                         </span>
                         <span className="shrink-0 tabular-nums">
                           {fmtCurrency(flow.amount, { sign: true })}
@@ -421,7 +568,17 @@ export default async function InvestmentsPage() {
                               className="flex items-center justify-between gap-3 text-sm"
                             >
                               <span>
-                                {fmtDate(flow.transaction.date)} · {contributionLabel(flow)}
+                                {fmtDate(flow.transaction.date)} ·{" "}
+                                <span
+                                  className={
+                                    !flow.fromAccount &&
+                                    (flow.source === "deposit" || flow.source === "transfer_unmatched")
+                                      ? "text-muted-foreground"
+                                      : "text-foreground"
+                                  }
+                                >
+                                  {contributionLabel(flow)}
+                                </span>
                               </span>
                               <span className="shrink-0 tabular-nums">
                                 {fmtCurrency(flow.amount, { sign: true })}
@@ -433,7 +590,9 @@ export default async function InvestmentsPage() {
                     )}
                     </>
                   ) : (
-                    <p className="text-xs text-muted-foreground">No contribution activity yet.</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isAdmin ? "No contribution activity yet." : "No activity yet"}
+                    </p>
                   )}
                 </div>
                 {accountHoldings.length > 0 && (

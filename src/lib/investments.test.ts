@@ -50,6 +50,21 @@ describe("Plaid investment transaction mapping", () => {
     expect(mapPlaidInvestmentType("transfer", undefined, -10)).toBe("transfer_in");
   });
 
+  it("maps cash EFT and ACH transfers by Plaid amount sign", () => {
+    expect(
+      mapPlaidInvestmentType(
+        "cash",
+        null,
+        -500,
+        "Electronic Funds Transfer Received",
+      ),
+    ).toBe("transfer_in");
+    expect(mapPlaidInvestmentType("cash", null, -25, "ACH Deposit")).toBe("transfer_in");
+    expect(mapPlaidInvestmentType("cash", null, 500, "Electronic Funds Transfer")).toBe(
+      "transfer_out",
+    );
+  });
+
   it("uses contribution names only for inbound Plaid transfers", () => {
     expect(
       mapPlaidInvestmentType(

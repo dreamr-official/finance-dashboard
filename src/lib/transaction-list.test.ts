@@ -9,7 +9,22 @@ import {
   parseTransactionFilters,
   withParams,
 } from "./transaction-list";
-import type { Transaction } from "./types";
+import type { Account, Transaction } from "./types";
+
+function account(id: string): Account {
+  return {
+    id,
+    institutionId: "institution",
+    name: id,
+    type: "checking",
+    assetClass: "cash",
+    currency: "USD",
+    currentBalance: 0,
+    lastSyncedAt: null,
+    isManual: true,
+    connectionStatus: "manual",
+  };
+}
 
 function transaction(
   id: string,
@@ -153,6 +168,45 @@ describe("transaction list pagination", () => {
     expect(groupByMonth([transaction("jan", "2026-01-31")], []).map((g) => g.label)).toEqual([
       "January 2026",
     ]);
+  });
+
+  it("includes matched transfers in account month totals and excludes pending rows", () => {
+    const bank = account("bank");
+    const savings = account("savings");
+    const outgoing = transaction("out", "2026-10-10", {
+      accountId: bank.id,
+      amount: -100,
+      type: "transfer_out",
+      name: "Transfer",
+    });
+    const incoming = transaction("in", "2026-10-10", {
+      accountId: savings.id,
+      amount: 100,
+      type: "transfer_in",
+      name: "Transfer",
+    });
+    const pending = transaction("pending", "2026-10-12", {
+      accountId: bank.id,
+      amount: -50,
+      type: "expense",
+      pending: true,
+    });
+    const accountMonth = groupByMonth(
+      [outgoing, pending],
+      [outgoing, pending],
+      [bank, savings],
+      [outgoing, incoming, pending],
+      true,
+    );
+    const activityMonth = groupByMonth(
+      [outgoing, pending],
+      [outgoing, pending],
+      [bank, savings],
+      [outgoing, incoming, pending],
+    );
+
+    expect(accountMonth[0].moneyOut).toBe(100);
+    expect(activityMonth[0].moneyOut).toBe(0);
   });
 
   it("builds parameterized links and chunks arrays", () => {

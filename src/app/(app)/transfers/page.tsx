@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { getSessionUser } from "@/lib/auth";
 import { getDataset } from "@/lib/data/provider";
 import { appToday, shiftDate } from "@/lib/dates";
 import {
@@ -11,13 +12,18 @@ import {
 } from "@/lib/transfer-match";
 import type { Account } from "@/lib/types";
 import { fmtCurrency, fmtDate } from "@/lib/format";
+import { reconcileInvestmentFunding } from "@/lib/reconcile";
+import { fundingDifferenceParts } from "@/lib/reconcile";
+import type { FundingIssue, InvestmentFundingSummary } from "@/lib/reconcile";
+import { transferHeadline } from "@/lib/transfer-headline";
+import { sortAccountsByClass } from "@/lib/account-types";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const MAX_PAIRS = 300;
+const MAX_PAIRS = 10;
 
 const KIND_LABEL: Record<TransferKind, string> = {
   transfer: "Transfer",
@@ -42,10 +48,12 @@ export default async function TransfersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const [{ accounts, transactions }, params] = await Promise.all([
+  const [{ accounts, institutions, transactions }, params, user] = await Promise.all([
     getDataset(),
     searchParams,
+    getSessionUser(),
   ]);
+  const isAdmin = user?.role === "admin";
   const today = appToday();
   const from = dateParam(params.from, isoDaysAgo(today, 365));
   const to = dateParam(params.to, today);
@@ -60,6 +68,12 @@ export default async function TransfersPage({
     to,
     accountId: accountId || undefined,
   });
+  const funding = reconcileInvestmentFunding(accounts, institutions, transactions, {
+    today,
+    from,
+    to,
+    accountId: accountId || undefined,
+  });
   const unmatched = [...report.unmatchedOut, ...report.unmatchedIn].sort(
     (a, b) =>
       b.transaction.date.localeCompare(a.transaction.date) ||
@@ -68,15 +82,20 @@ export default async function TransfersPage({
   const needsReview = unmatched.filter((leg) => leg.status === "needs_review");
   const pending = unmatched.filter((leg) => leg.status === "pending");
   const visiblePairs = report.pairs.slice(0, MAX_PAIRS);
+  const institutionsById = new Map(institutions.map((institution) => [institution.id, institution.name]));
+  const sortedAccounts = sortAccountsByClass(accounts, institutionsById);
   const { summary } = report;
+  const clearAccountHref = `/transfers?${new URLSearchParams({ from, to }).toString()}`;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Transfers</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Money moved between your own accounts, matched leg to leg so you can see that
-          everything that left one account arrived in another.
+          {transferHeadline(summary.needsReview, summary.pending)}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Moving money between your own accounts isn&apos;t a gain or a loss.
         </p>
       </div>
 
@@ -111,7 +130,7 @@ export default async function TransfersPage({
             className="h-9 min-w-0 rounded-md border bg-background px-2 text-base text-foreground md:text-sm"
           >
             <option value="">All accounts</option>
-            {accounts.map((account) => (
+            {sortedAccounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.name}
               </option>
@@ -131,6 +150,8 @@ export default async function TransfersPage({
         </div>
       </form>
 
+      <FundingCard groups={funding} clearAccountHref={clearAccountHref} />
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
         <SummaryCard
           title="Matched"
@@ -139,18 +160,21 @@ export default async function TransfersPage({
           noun="transfer"
         />
         <SummaryCard
-          title="Needs review"
-          count={summary.needsReview.count}
-          total={summary.needsReview.total}
-          noun="leg"
+          title="Left, never arrived"
+          count={needsReview.filter((leg) => leg.direction === "out").length}
+          total={needsReview.filter((leg) => leg.direction === "out").reduce((sum, leg) => sum + leg.amount, 0)}
+          noun="transaction"
         />
         <div className="col-span-2 sm:col-span-1">
           <SummaryCard
-            title="Pending"
-            count={summary.pending.count}
-            total={summary.pending.total}
-            noun="leg"
+            title="Arrived, unknown source"
+            count={needsReview.filter((leg) => leg.direction === "in").length}
+            total={needsReview.filter((leg) => leg.direction === "in").reduce((sum, leg) => sum + leg.amount, 0)}
+            noun="transaction"
           />
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <SummaryCard title="In transit" count={pending.length} total={pending.reduce((sum, leg) => sum + leg.amount, 0)} noun="transaction" />
         </div>
       </div>
 
@@ -175,7 +199,9 @@ export default async function TransfersPage({
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Nothing to review — every transfer in this range has a matching other side.
+              {pending.length > 0
+                ? "Nothing to review. Transfers still in transit are listed below."
+                : "Nothing to review — every transfer in this range has a matching other side."}
             </p>
           )}
         </CardContent>
@@ -202,7 +228,7 @@ export default async function TransfersPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Routes</CardTitle>
+          <CardTitle>Where transfers went</CardTitle>
           <p className="text-sm text-muted-foreground">Matched totals by where the money went.</p>
         </CardHeader>
         <CardContent>
@@ -245,17 +271,23 @@ export default async function TransfersPage({
           {visiblePairs.length ? (
             <ul className="divide-y">
               {visiblePairs.map((pair) => (
-                <PairRow key={pair.id} pair={pair} />
+                <PairRow key={pair.id} pair={pair} isAdmin={isAdmin} />
               ))}
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">No matched transfers in this range.</p>
           )}
           {report.pairs.length > MAX_PAIRS && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Showing the newest {MAX_PAIRS} of {report.pairs.length}. Narrow the date range to
-              see older ones.
-            </p>
+            <details className="mt-3 text-sm">
+              <summary className="cursor-pointer text-muted-foreground">
+                Show all {report.pairs.length}
+              </summary>
+              <ul className="mt-2 divide-y">
+                {report.pairs.slice(MAX_PAIRS).map((pair) => (
+                  <PairRow key={pair.id} pair={pair} isAdmin={isAdmin} />
+                ))}
+              </ul>
+            </details>
           )}
         </CardContent>
       </Card>
@@ -284,6 +316,179 @@ function SummaryCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function FundingCard({
+  groups,
+  clearAccountHref,
+}: {
+  groups: InvestmentFundingSummary[];
+  clearAccountHref: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Banks → investments: did it all arrive?</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Bank transfers are grouped by the investment institution they funded.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {groups.length ? (
+          <ul className="divide-y">
+            {groups.map((group) => {
+              const { inTransit, needsReview } = fundingDifferenceParts(group);
+              const hasReview = needsReview >= 0.005;
+              const hasInTransit = inTransit >= 0.005;
+              const status = hasReview
+                ? `${fmtCurrency(needsReview)} doesn't match — review${
+                    hasInTransit ? ` · ${fmtCurrency(inTransit)} in transit` : ""
+                  }`
+                : hasInTransit
+                  ? `${fmtCurrency(inTransit)} in transit`
+                  : "All arrived";
+              const statusClass =
+                hasReview
+                  ? "text-red-700 dark:text-red-400"
+                  : hasInTransit
+                    ? "text-amber-700 dark:text-amber-400"
+                    : "text-emerald-700 dark:text-emerald-400";
+              const unpairedCount = group.missingArrival.length + group.missingSource.length;
+
+              return (
+                <li key={group.institutionId ?? group.institutionName} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-medium">{group.institutionName}</h3>
+                      <p className="mt-1 flex flex-wrap gap-x-1.5 text-sm">
+                        <span className="text-muted-foreground">Sent from your banks</span>
+                        <span className="font-medium tabular-nums">
+                          {fmtCurrency(group.sentFromBanks)}
+                        </span>
+                        <span className="text-muted-foreground">· Arrived</span>
+                        <span className="font-medium tabular-nums">{fmtCurrency(group.arrived)}</span>
+                      </p>
+                    </div>
+                    <span className={`shrink-0 text-sm font-medium ${statusClass}`}>{status}</span>
+                  </div>
+                  {group.perAccount.some((item) => item.arrived > 0) && (
+                    <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      {group.perAccount
+                        .filter((item) => item.arrived > 0)
+                        .map((item) => (
+                          <span key={item.account.id}>
+                            <Link href={`/accounts/${item.account.id}`} className="hover:underline">
+                              {item.account.name}
+                            </Link>{" "}
+                            <span className="font-medium tabular-nums text-foreground">
+                              {fmtCurrency(item.arrived)}
+                            </span>
+                          </span>
+                        ))}
+                    </p>
+                  )}
+                  {group.unassignedBankOutflows.count > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {group.unassignedBankOutflows.count} bank{" "}
+                      {group.unassignedBankOutflows.count === 1 ? "transfer" : "transfers"} to{" "}
+                      {group.institutionName} ({fmtCurrency(group.unassignedBankOutflows.total)})
+                      {" "}can&apos;t be tied to one account.{" "}
+                      <Link href={clearAccountHref} className="underline hover:text-foreground">
+                        Clear the filter to see them.
+                      </Link>
+                    </p>
+                  )}
+                  {(group.withdrawnToBanks > 0 || group.arrivedInBanks > 0) && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Withdrawn to banks{" "}
+                      <span className="font-medium tabular-nums text-foreground">
+                        {fmtCurrency(group.withdrawnToBanks)}
+                      </span>{" "}
+                      · Arrived in banks{" "}
+                      <span className="font-medium tabular-nums text-foreground">
+                        {fmtCurrency(group.arrivedInBanks)}
+                      </span>
+                    </p>
+                  )}
+                  {unpairedCount > 0 && (
+                    <details className="mt-2 text-xs">
+                      <summary className="cursor-pointer text-muted-foreground">
+                        Review {unpairedCount} unmatched {unpairedCount === 1 ? "transaction" : "transactions"}
+                      </summary>
+                      <ul className="mt-1 divide-y rounded-md border px-3">
+                        {group.missingArrival.map((item) => (
+                          <FundingIssueRow
+                            key={item.transaction.id}
+                            issue={item}
+                            incoming={false}
+                          />
+                        ))}
+                        {group.missingSource.map((item) => (
+                          <FundingIssueRow
+                            key={item.transaction.id}
+                            issue={item}
+                            incoming
+                          />
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No bank-to-investment funding found in this date range.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FundingIssueRow({
+  issue,
+  incoming,
+}: {
+  issue: FundingIssue;
+  incoming: boolean;
+}) {
+  return (
+    <li className="flex min-w-0 flex-col gap-1 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
+          <span>{fmtDate(`${issue.transaction.date}T00:00:00`)}</span>
+          <Link href={`/accounts/${issue.account.id}`} className="hover:underline">
+            {issue.account.name}
+          </Link>
+        </div>
+        <p className="break-words text-foreground">
+          {issue.transaction.name}
+          <span className="ml-1 text-muted-foreground">
+            · {incoming ? "Arrived, no bank source" : "Left bank, no arrival"}
+          </span>
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="font-medium tabular-nums">
+          {fmtCurrency(
+            incoming ? Math.abs(issue.transaction.amount) : -Math.abs(issue.transaction.amount),
+            { sign: true },
+          )}
+        </span>
+        <span
+          className={
+            issue.status === "in_transit"
+              ? "text-amber-700 dark:text-amber-400"
+              : "text-red-700 dark:text-red-400"
+          }
+        >
+          {issue.status === "in_transit" ? "In transit" : "Needs review"}
+        </span>
+      </div>
+    </li>
   );
 }
 
@@ -337,7 +542,7 @@ function lagLabel(lagDays: number) {
   return `${days} ${days === 1 ? "day" : "days"} ${lagDays > 0 ? "later" : "earlier"}`;
 }
 
-function PairRow({ pair }: { pair: TransferPair }) {
+function PairRow({ pair, isAdmin }: { pair: TransferPair; isAdmin: boolean }) {
   return (
     <li className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
       <div className="min-w-0">
@@ -345,7 +550,7 @@ function PairRow({ pair }: { pair: TransferPair }) {
         <div className="mt-0.5 text-xs text-muted-foreground">
           {KIND_LABEL[pair.kind]} · sent {fmtDate(`${pair.outDate}T00:00:00`)} · arrived{" "}
           {lagLabel(pair.lagDays)}
-          {pair.confirmed && " · linked"}
+          {isAdmin && pair.confirmed && " · linked"}
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">

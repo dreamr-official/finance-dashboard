@@ -14,7 +14,8 @@ export interface SessionUser {
  */
 export async function getSessionUser(): Promise<SessionUser | null> {
   if (isDemoMode()) {
-    return { id: "demo-admin", email: "you@example.com", role: "admin" };
+    const role = process.env.DEMO_ROLE === "viewer" ? "viewer" : "admin";
+    return { id: `demo-${role}`, email: "you@example.com", role };
   }
   const { createClient } = await import("./supabase/server");
   const supabase = await createClient();
